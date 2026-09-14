@@ -211,25 +211,25 @@ export default function LiveTracking() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <h1 className="text-xl sm:text-2xl font-black text-espresso">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <h1 className="text-xl sm:text-2xl font-black text-espresso tracking-tight">
               Live Tracking Armada Rider
             </h1>
-            <Badge variant="coffee">GPS Realtime</Badge>
+            <Badge variant="coffee" className="text-[11px] font-bold shrink-0">GPS Realtime</Badge>
           </div>
-          <p className="text-xs sm:text-sm text-gray-500">
+          <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
             Pantau pergerakan posisi armada kopi keliling, status keliling, dan omzet harian secara langsung.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => fetchLiveLocations(true)}
             disabled={loading}
-            className="px-3.5 py-2.5 bg-white hover:bg-gray-50 text-coffee-800 border border-amber-200/80 font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-2"
+            className="w-full sm:w-auto px-3.5 py-2 bg-white hover:bg-gray-50 text-coffee-800 border border-amber-200 font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-2"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
             <span>Update Lokasi</span>
@@ -237,77 +237,89 @@ export default function LiveTracking() {
         </div>
       </div>
 
-      {/* KPI Stats Bar */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-white p-3 sm:p-4 rounded-2xl border border-amber-200/70 shadow-xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-coffee-50 text-coffee-700 flex items-center justify-center shrink-0">
-            <Bike className="w-5 h-5" />
+      {/* KPI Stats Bar - Fully Mobile Optimized */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        {/* Total Armada */}
+        <div className="bg-white p-2.5 sm:p-4 rounded-2xl border border-amber-200/70 shadow-xs flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-coffee-50 text-coffee-700 flex items-center justify-center shrink-0">
+            <Bike className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <span className="text-[10px] sm:text-[11px] font-bold text-gray-400 uppercase tracking-wider block">
+          <div className="min-w-0">
+            <span className="text-[10px] sm:text-[11px] font-bold text-gray-400 uppercase tracking-wider block truncate">
               Total Armada
             </span>
-            <span className="text-lg sm:text-xl font-black text-espresso">
-              {summary.total_riders || 0} Rider
-            </span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-base sm:text-xl font-black text-espresso">
+                {summary.total_riders || 0}
+              </span>
+              <span className="text-[10px] sm:text-xs text-gray-400 font-medium">Rider</span>
+            </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-4 rounded-2xl border border-amber-200/70 shadow-xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-            <Navigation className="w-5 h-5" />
+        {/* Sedang Keliling */}
+        <div className="bg-white p-2.5 sm:p-4 rounded-2xl border border-amber-200/70 shadow-xs flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+            <Navigation className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <span className="text-[10px] sm:text-[11px] font-bold text-gray-400 uppercase tracking-wider block">
-              Sedang Keliling
+          <div className="min-w-0">
+            <span className="text-[10px] sm:text-[11px] font-bold text-amber-700 uppercase tracking-wider block truncate">
+              Keliling
             </span>
-            <span className="text-lg sm:text-xl font-black text-amber-700">
-              {summary.total_on_duty || 0} Rider
-            </span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-base sm:text-xl font-black text-amber-700">
+                {summary.total_on_duty || 0}
+              </span>
+              <span className="text-[10px] sm:text-xs text-amber-600/80 font-medium">Rider</span>
+            </div>
           </div>
         </div>
 
-        <div className="bg-white p-3 sm:p-4 rounded-2xl border border-emerald-100 shadow-xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-            <MapPin className="w-5 h-5" />
+        {/* GPS Online */}
+        <div className="bg-white p-2.5 sm:p-4 rounded-2xl border border-emerald-100 shadow-xs flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <MapPin className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <span className="text-[10px] sm:text-[11px] font-bold text-gray-400 uppercase tracking-wider block">
-              GPS Aktif (Online)
+          <div className="min-w-0">
+            <span className="text-[10px] sm:text-[11px] font-bold text-emerald-700 uppercase tracking-wider block truncate">
+              GPS Online
             </span>
-            <span className="text-lg sm:text-xl font-black text-emerald-600">
-              {summary.total_active_gps || 0} Rider
-            </span>
+            <div className="flex items-baseline gap-1 mt-0.5">
+              <span className="text-base sm:text-xl font-black text-emerald-600">
+                {summary.total_active_gps || 0}
+              </span>
+              <span className="text-[10px] sm:text-xs text-emerald-600/80 font-medium">Rider</span>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Main Map & Sidebar Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Leaflet Map Canvas (Takes 8 cols on desktop) */}
-        <div className="lg:col-span-8 bg-white rounded-3xl border border-amber-200/80 shadow-sm overflow-hidden h-[480px] sm:h-[560px] relative">
+        {/* Leaflet Map Canvas */}
+        <div className="lg:col-span-8 bg-white rounded-3xl border border-amber-200/80 shadow-xs overflow-hidden h-[360px] sm:h-[560px] relative">
           <div ref={mapContainerRef} className="w-full h-full z-0" />
 
           {/* Map Legend Overlay */}
-          <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur-xs p-2.5 rounded-xl border border-gray-200 shadow-md text-[11px] space-y-1.5 pointer-events-auto">
-            <div className="font-bold text-gray-800 text-[11px]">Legenda Status:</div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="text-gray-600">Aktif Bergerak (&lt;15m)</span>
+          <div className="absolute top-2.5 left-2.5 z-10 bg-white/95 backdrop-blur-xs p-2 sm:p-2.5 rounded-xl border border-gray-200/80 shadow-md text-[10px] sm:text-[11px] space-y-1 pointer-events-auto">
+            <div className="font-extrabold text-gray-800 text-[10px] sm:text-[11px]">Legenda Status:</div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse"></span>
+              <span className="text-gray-600 truncate">Aktif Bergerak (&lt;15m)</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-              <span className="text-gray-600">Keliling / Idle</span>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+              <span className="text-gray-600 truncate">Keliling / Idle</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-gray-400"></span>
-              <span className="text-gray-600">Offline / Belum GPS</span>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-gray-400 shrink-0"></span>
+              <span className="text-gray-600 truncate">Offline / Belum GPS</span>
             </div>
           </div>
         </div>
 
         {/* Riders List Sidebar (Takes 4 cols on desktop) */}
-        <div className="lg:col-span-4 bg-white rounded-3xl border border-amber-200/80 shadow-sm p-4 flex flex-col h-[480px] sm:h-[560px]">
+        <div className="lg:col-span-4 bg-white rounded-3xl border border-amber-200/80 shadow-xs p-3.5 sm:p-4 flex flex-col h-[440px] sm:h-[560px]">
           <div className="space-y-2.5 pb-3 border-b border-gray-100">
             <div className="flex items-center justify-between">
               <h3 className="font-extrabold text-sm text-espresso">Daftar Armada Rider</h3>
@@ -318,7 +330,7 @@ export default function LiveTracking() {
 
             {/* Quick Search */}
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-3" />
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-2.5" />
               <input
                 type="text"
                 value={search}
@@ -334,7 +346,7 @@ export default function LiveTracking() {
                 type="button"
                 onClick={() => setFilterDuty("all")}
                 className={`py-1 rounded-lg transition-colors ${
-                  filterDuty === "all" ? "bg-white text-espresso shadow-xs" : "hover:text-espresso"
+                  filterDuty === "all" ? "bg-white text-espresso shadow-xs font-black" : "hover:text-espresso"
                 }`}
               >
                 Semua
@@ -343,7 +355,7 @@ export default function LiveTracking() {
                 type="button"
                 onClick={() => setFilterDuty("duty")}
                 className={`py-1 rounded-lg transition-colors ${
-                  filterDuty === "duty" ? "bg-white text-espresso shadow-xs" : "hover:text-espresso"
+                  filterDuty === "duty" ? "bg-white text-espresso shadow-xs font-black" : "hover:text-espresso"
                 }`}
               >
                 Keliling
@@ -352,13 +364,14 @@ export default function LiveTracking() {
                 type="button"
                 onClick={() => setFilterDuty("active")}
                 className={`py-1 rounded-lg transition-colors ${
-                  filterDuty === "active" ? "bg-white text-espresso shadow-xs" : "hover:text-espresso"
+                  filterDuty === "active" ? "bg-white text-espresso shadow-xs font-black" : "hover:text-espresso"
                 }`}
               >
                 Online
               </button>
             </div>
           </div>
+
 
           {/* Scrollable List */}
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 py-2 space-y-1">
@@ -383,7 +396,7 @@ export default function LiveTracking() {
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <div
                           className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                             isActive
@@ -393,11 +406,11 @@ export default function LiveTracking() {
                         >
                           <Bike className="w-4 h-4" />
                         </div>
-                        <div>
-                          <div className="font-extrabold text-xs text-espresso flex items-center gap-1.5">
-                            {rider.name}
+                        <div className="min-w-0">
+                          <div className="font-extrabold text-xs text-espresso flex items-center gap-1.5 truncate">
+                            <span className="truncate">{rider.name}</span>
                             <span
-                              className={`w-2 h-2 rounded-full inline-block ${
+                              className={`w-2 h-2 rounded-full shrink-0 inline-block ${
                                 isActive
                                   ? "bg-emerald-500 animate-pulse"
                                   : rider.is_duty === 1
@@ -417,7 +430,7 @@ export default function LiveTracking() {
                             e.stopPropagation();
                             handleFocusRider(rider);
                           }}
-                          className="p-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 text-coffee-700 text-xs shadow-2xs"
+                          className="p-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 text-coffee-700 text-xs shadow-2xs shrink-0"
                           title="Fokus ke Peta"
                         >
                           <MapPin className="w-3.5 h-3.5" />
@@ -427,36 +440,37 @@ export default function LiveTracking() {
 
                     {/* Rider Performance Snippet */}
                     <div className="mt-2.5 pt-2 border-t border-gray-100/60 flex items-center justify-between text-[11px]">
-                      <span className="text-gray-500">
+                      <span className="text-gray-500 truncate">
                         Omzet:{" "}
                         <strong className="text-coffee-800">
                           {formatRupiah(rider.today_sales_amount || 0)}
                         </strong>
                       </span>
-                      <span className="text-gray-400">
-                        {rider.today_cups_sold || 0} cup terjual
+                      <span className="text-gray-400 shrink-0 ml-2">
+                        {rider.today_cups_sold || 0} cup
                       </span>
                     </div>
 
                     {/* Contact button if phone available */}
-                    {rider.phone && (
-                      <div className="mt-2 flex items-center justify-between">
-                        <span className="text-[10px] text-gray-400">
-                          {rider.last_location_time
-                            ? `GPS: ${new Date(rider.last_location_time).toLocaleTimeString("id-ID")}`
-                            : "Belum update"}
-                        </span>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-1">
+                      <span className="text-[10px] text-gray-400 truncate">
+                        {rider.last_location_time
+                          ? `GPS: ${new Date(rider.last_location_time).toLocaleTimeString("id-ID")}`
+                          : "Belum update"}
+                      </span>
+                      {rider.phone && (
                         <a
                           href={`https://wa.me/${rider.phone.replace(/[^0-9]/g, "")}`}
                           target="_blank"
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-md transition-colors"
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-md transition-colors shrink-0"
                         >
                           <Phone className="w-2.5 h-2.5" /> WhatsApp
                         </a>
-                      </div>
-                    )}
+                      )}
+                    </div>
+
                   </div>
                 );
               })
