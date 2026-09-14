@@ -10,6 +10,7 @@ import {
   ArrowUpRight,
   PlusCircle,
   Calendar,
+  MapPin,
 } from "lucide-react";
 import { request } from "../utils/request";
 import { API_ENDPOINTS } from "../utils/endpoints";
@@ -76,6 +77,15 @@ export default function Dashboard() {
           <div className="flex flex-wrap gap-2.5">
             {!isRider && (
               <Link
+                to="/live-tracking"
+                className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-espresso font-black text-sm rounded-xl shadow-md transition-all flex items-center gap-2"
+              >
+                <MapPin className="w-4 h-4 text-espresso" />
+                <span>Live Tracking GPS</span>
+              </Link>
+            )}
+            {!isRider && (
+              <Link
                 to="/pos"
                 className="px-4 py-2.5 bg-coffee-600 hover:bg-coffee-500 text-white font-bold text-sm rounded-xl shadow-md transition-all flex items-center gap-2"
               >
@@ -91,6 +101,7 @@ export default function Dashboard() {
               <span>Input Sales Rider</span>
             </Link>
           </div>
+
         </div>
       </div>
 

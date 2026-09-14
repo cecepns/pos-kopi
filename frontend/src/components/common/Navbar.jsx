@@ -76,7 +76,21 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
             </button>
           )}
 
+          {/* Owner / Admin / Cashier Quick Live GPS Link */}
+          {!isRider && (
+            <Link
+              to="/live-tracking"
+              className="px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100"
+              title="Pantau Lokasi GPS Rider Realtime"
+            >
+              <MapPin className="w-3.5 h-3.5 text-amber-700" />
+              <span className="hidden sm:inline">Live GPS Rider</span>
+            </Link>
+          )}
+
+
           {/* User profile info */}
+
           <div className="flex items-center gap-2.5 pl-2 border-l border-amber-100">
             <div className="w-9 h-9 rounded-full bg-amber-100/80 border border-amber-200 flex items-center justify-center text-coffee-800 font-bold text-sm shadow-inner">
               {user?.name ? user.name.charAt(0).toUpperCase() : <User className="w-4 h-4" />}

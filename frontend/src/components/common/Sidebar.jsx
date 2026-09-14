@@ -28,7 +28,7 @@ export default function Sidebar({ isOpen, onClose }) {
       title: "UTAMA",
       items: [
         { name: "Dashboard", path: "/", icon: LayoutDashboard, show: true },
-        { name: "Live Tracking GPS", path: "/live-tracking", icon: MapPin, show: !isRider, highlight: true },
+        { name: "Live Tracking GPS", path: "/live-tracking", icon: MapPin, show: !isRider, highlight: true, isLive: true },
       ],
     },
     {
@@ -131,11 +131,17 @@ export default function Sidebar({ isOpen, onClose }) {
                       >
                         <Icon className="w-4 h-4 shrink-0" />
                         <span>{item.name}</span>
-                        {item.highlight && (
+                        {item.isLive ? (
+                          <span className="ml-auto inline-flex items-center gap-1 text-[10px] bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full font-bold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" />
+                            LIVE
+                          </span>
+                        ) : item.highlight ? (
                           <span className="ml-auto text-[10px] bg-coffee-500/30 text-coffee-300 border border-coffee-500/40 px-1.5 py-0.5 rounded-md font-semibold">
                             Cepat
                           </span>
-                        )}
+                        ) : null}
+
                       </NavLink>
                     );
                   })}

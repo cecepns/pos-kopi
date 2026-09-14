@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, Edit2, Trash2, Bike, Smartphone, PhoneOff, Calendar, UserCheck } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Plus, Search, Edit2, Trash2, Bike, Smartphone, PhoneOff, Calendar, UserCheck, MapPin } from "lucide-react";
+
 import { request } from "../utils/request";
 import { API_ENDPOINTS } from "../utils/endpoints";
 import { formatDateIndo } from "../utils/formatters";
@@ -172,15 +174,26 @@ export default function Riders() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleOpenCreate}
-          className="px-4 py-2.5 bg-coffee-600 hover:bg-coffee-700 text-white font-bold text-sm rounded-xl shadow-md shadow-coffee-950/20 transition-all flex items-center justify-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          <span>+ Tambah Rider Baru</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Link
+            to="/live-tracking"
+            className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-espresso font-black text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+          >
+            <MapPin className="w-4 h-4 text-espresso" />
+            <span>Pantau Live GPS</span>
+          </Link>
+
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="px-4 py-2.5 bg-coffee-600 hover:bg-coffee-700 text-white font-bold text-sm rounded-xl shadow-md shadow-coffee-950/20 transition-all flex items-center justify-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Tambah Rider Baru</span>
+          </button>
+        </div>
       </div>
+
 
       {/* Stat Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
