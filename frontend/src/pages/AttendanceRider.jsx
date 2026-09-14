@@ -237,13 +237,13 @@ export default function AttendanceRider() {
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
             <h1 className="text-xl sm:text-2xl font-black text-espresso">
               Presensi & Absensi Rider
             </h1>
-            <Badge variant="coffee">
+            <Badge variant="coffee" className="text-[11px] font-bold shrink-0">
               {riderInfo?.code || "RDR"} - {riderInfo?.name || user?.name}
             </Badge>
           </div>
@@ -252,7 +252,7 @@ export default function AttendanceRider() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-2xl border border-amber-200/80 shadow-xs">
+        <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-2xl border border-amber-200/80 shadow-xs self-start sm:self-auto">
           <Calendar className="w-4 h-4 text-coffee-600" />
           <span className="text-xs font-bold text-coffee-900">
             {formatDateIndo(new Date().toISOString().split("T")[0])}
@@ -266,7 +266,7 @@ export default function AttendanceRider() {
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
                 Status Kehadiran Hari Ini
               </span>
@@ -278,6 +278,7 @@ export default function AttendanceRider() {
                 <Badge variant="secondary">Belum Absen Masuk</Badge>
               )}
             </div>
+
 
             <div className="text-3xl sm:text-4xl font-black text-espresso tracking-tight">
               {isClockedOut
