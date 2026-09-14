@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
-  Camera,
   MapPin,
   Clock,
   CheckCircle2,
@@ -35,15 +34,7 @@ export default function AttendanceRider() {
   const [notes, setNotes] = useState("");
   const [coords, setCoords] = useState({ lat: null, lng: null, accuracy: null });
   const [isLocating, setIsLocating] = useState(false);
-  const [capturedPhoto, setCapturedPhoto] = useState(null); // base64 or file
-  const [photoBlob, setPhotoBlob] = useState(null);
 
-  // Camera stream state
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [isCameraActive, setIsCameraActive] = useState(false);
-  const [cameraError, setCameraError] = useState("");
-  const fileInputRef = useRef(null);
 
   const fetchTodayStatus = async () => {
     setLoading(true);
@@ -107,103 +98,20 @@ export default function AttendanceRider() {
     );
   };
 
-  // Start Camera
-  const startCamera = async () => {
-    setCameraError("");
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: false,
-        });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          setIsCameraActive(true);
-        }
-      } else {
-        setCameraError("Kamera perangkat tidak dapat diakses.");
-      }
-    } catch (err) {
-      console.warn("Camera start error:", err.message);
-      setCameraError("Izin kamera ditolak atau tidak tersedia. Anda bisa unggah foto.");
-    }
-  };
-
-  // Stop Camera
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject;
-      const tracks = stream.getTracks();
-      tracks.forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
-    }
-    setIsCameraActive(false);
-  };
-
-  // Capture Selfie Photo from Camera Stream
-  const captureSelfie = () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth || 480;
-      canvas.height = video.videoHeight || 480;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      canvas.toBlob((blob) => {
-        if (blob) {
-          setPhotoBlob(blob);
-          setCapturedPhoto(URL.createObjectURL(blob));
-          stopCamera();
-        }
-      }, "image/jpeg", 0.85);
-    }
-  };
-
-  // Fallback upload file
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setPhotoBlob(file);
-      setCapturedPhoto(URL.createObjectURL(file));
-      stopCamera();
-    }
-  };
-
   const openActionModal = (type) => {
     setModalType(type);
     setStatus("present");
     setNotes("");
-    setCapturedPhoto(null);
-    setPhotoBlob(null);
     requestLocation();
-    setTimeout(() => {
-      startCamera();
-    }, 300);
   };
 
   const closeActionModal = () => {
-    stopCamera();
     setModalType(null);
   };
 
   const handleSubmitAttendance = async (e) => {
     e.preventDefault();
-    if (!photoBlob && !capturedPhoto) {
-      toast.error("Wajib mengambil foto selfie bukti kehadiran!");
-      return;
-    }
-
     setIsSubmitting(true);
-    const formData = new FormData();
-    if (photoBlob) {
-      formData.append("photo", photoBlob, `attendance-${Date.now()}.jpg`);
-    }
-    if (coords.lat) formData.append("lat", coords.lat);
-    if (coords.lng) formData.append("lng", coords.lng);
-    formData.append("notes", notes);
-    formData.append("status", status);
-    if (riderInfo?.id) formData.append("rider_id", riderInfo.id);
 
     try {
       const endpoint =
@@ -211,9 +119,15 @@ export default function AttendanceRider() {
           ? API_ENDPOINTS.ATTENDANCES.CLOCK_IN
           : API_ENDPOINTS.ATTENDANCES.CLOCK_OUT;
 
-      const res = await request.post(endpoint, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const payload = {
+        lat: coords.lat !== null ? coords.lat : undefined,
+        lng: coords.lng !== null ? coords.lng : undefined,
+        notes: notes || undefined,
+        status: status || "present",
+        rider_id: riderInfo?.id || undefined,
+      };
+
+      const res = await request.post(endpoint, payload);
 
       if (res.success) {
         toast.success(res.message || "Absensi berhasil dicatat!");
@@ -229,6 +143,7 @@ export default function AttendanceRider() {
       setIsSubmitting(false);
     }
   };
+
 
   const attendance = todayData?.attendance;
   const isClockedIn = todayData?.is_clocked_in;
@@ -293,7 +208,7 @@ export default function AttendanceRider() {
                 ? "Terima kasih atas kerja keras Anda hari ini. Data penjualan dan absensi telah terekam sempurna."
                 : isClockedIn
                 ? `Anda telah absen masuk pada jam ${attendance?.clock_in || "-"}. Tetap jaga keselamatan di jalan.`
-                : "Ambil foto selfie keberangkatan dan bagikan titik lokasi GPS Anda sebelum mulai menjual kopi."}
+                : "Konfirmasi kehadiran dan bagikan titik lokasi GPS Anda sebelum mulai keliling menjual kopi."}
             </p>
           </div>
 
@@ -305,10 +220,11 @@ export default function AttendanceRider() {
                 onClick={() => openActionModal("clock_in")}
                 className="px-6 py-4 rounded-2xl bg-coffee-600 hover:bg-coffee-700 text-white font-extrabold text-sm sm:text-base shadow-lg shadow-coffee-950/20 transition-all flex items-center justify-center gap-2.5 active:scale-95"
               >
-                <Camera className="w-5 h-5" />
+                <UserCheck className="w-5 h-5" />
                 <span>Absen Masuk (Clock In)</span>
               </button>
             )}
+
 
             {isClockedIn && !isClockedOut && (
               <button
@@ -433,108 +349,50 @@ export default function AttendanceRider() {
       <Modal
         isOpen={!!modalType}
         onClose={closeActionModal}
-        title={modalType === "clock_in" ? "Absen Masuk (Clock In)" : "Absen Pulang (Clock Out)"}
+        title={modalType === "clock_in" ? "Konfirmasi Absen Masuk" : "Konfirmasi Absen Pulang"}
         maxWidth="max-w-md"
       >
         <form onSubmit={handleSubmitAttendance} className="space-y-4">
-          {/* Camera Viewport / Photo Preview */}
-          <div className="relative bg-black rounded-2xl overflow-hidden aspect-4/3 flex items-center justify-center border-2 border-amber-200 shadow-inner">
-            {capturedPhoto ? (
-              <img
-                src={capturedPhoto}
-                alt="Selfie Preview"
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <>
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className={`w-full h-full object-cover ${isCameraActive ? "block" : "hidden"}`}
-                />
-                {!isCameraActive && (
-                  <div className="text-center p-4 text-gray-400">
-                    <Camera className="w-10 h-10 mx-auto mb-2 opacity-50 text-white" />
-                    <p className="text-xs text-white">Menghubungkan kamera...</p>
-                    {cameraError && (
-                      <p className="text-[11px] text-amber-300 mt-2 max-w-xs">{cameraError}</p>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Live Camera Guidelines */}
-            {isCameraActive && !capturedPhoto && (
-              <div className="absolute inset-0 border-2 border-white/30 rounded-2xl pointer-events-none flex items-center justify-center">
-                <div className="w-40 h-40 border-2 border-dashed border-white/60 rounded-full" />
+          {/* Rider & Time Overview Card */}
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 flex items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-coffee-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
+                <Bike className="w-5 h-5" />
               </div>
-            )}
+              <div className="min-w-0">
+                <span className="font-extrabold text-xs sm:text-sm text-espresso block truncate">
+                  {riderInfo?.name || user?.name || "Rider Keliling"}
+                </span>
+                <span className="text-[11px] text-gray-500 font-mono font-medium">
+                  {riderInfo?.code || "RDR"}
+                </span>
+              </div>
+            </div>
+
+            <div className="text-right shrink-0">
+              <span className="text-[10px] uppercase font-bold text-gray-400 block tracking-wider">
+                Waktu Sekarang
+              </span>
+              <span className="text-xs sm:text-sm font-black text-coffee-800 font-mono">
+                {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB
+              </span>
+            </div>
           </div>
 
-          {/* Hidden Canvas for capture */}
-          <canvas ref={canvasRef} className="hidden" />
-
-          {/* Camera Control Buttons */}
-          <div className="flex gap-2">
-            {!capturedPhoto ? (
-              <>
-                <button
-                  type="button"
-                  onClick={captureSelfie}
-                  disabled={!isCameraActive}
-                  className="flex-1 py-2.5 bg-coffee-700 hover:bg-coffee-800 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-colors disabled:opacity-50"
-                >
-                  <Camera className="w-4 h-4" />
-                  Ambil Foto Selfie
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl"
-                >
-                  Upload File
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setCapturedPhoto(null);
-                  setPhotoBlob(null);
-                  startCamera();
-                }}
-                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Foto Ulang
-              </button>
-            )}
-          </div>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            capture="user"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-
-          {/* GPS Location Status */}
-          <div className="p-3 bg-cream-light rounded-xl border border-amber-200 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-coffee-600 shrink-0" />
-              <div>
-                <span className="font-bold text-coffee-900 block">Koordinat GPS</span>
-                <span className="text-gray-500 text-[11px]">
+          {/* GPS Location Status Card */}
+          <div className="p-3.5 bg-cream-light/60 rounded-2xl border border-amber-200/80 flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                <MapPin className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <span className="font-bold text-coffee-900 block truncate">Koordinat Titik GPS</span>
+                <span className="text-gray-500 text-[11px] block truncate">
                   {isLocating
                     ? "Mencari titik lokasi GPS..."
                     : coords.lat
                     ? `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)} (±${coords.accuracy}m)`
-                    : "Lokasi belum terdeteksi"}
+                    : "Lokasi GPS belum terdeteksi"}
                 </span>
               </div>
             </div>
@@ -542,7 +400,7 @@ export default function AttendanceRider() {
               type="button"
               onClick={requestLocation}
               disabled={isLocating}
-              className="px-2.5 py-1 rounded-lg bg-white border border-gray-200 text-coffee-700 text-[11px] font-bold hover:bg-gray-50 transition-colors shrink-0"
+              className="px-2.5 py-1.5 rounded-xl bg-white border border-amber-200 text-coffee-700 text-[11px] font-bold hover:bg-gray-50 transition-colors shrink-0 shadow-2xs"
             >
               {isLocating ? "Mencari..." : "Deteksi Ulang"}
             </button>
@@ -551,13 +409,13 @@ export default function AttendanceRider() {
           {/* Status Kehadiran (Clock in only) */}
           {modalType === "clock_in" && (
             <div>
-              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
+              <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1.5">
                 Kondisi Kehadiran
               </label>
               <select
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs font-semibold text-gray-800 focus:ring-2 focus:ring-coffee-400 outline-hidden"
+                className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-gray-800 focus:ring-2 focus:ring-coffee-400 outline-hidden transition-all shadow-2xs"
               >
                 <option value="present">Hadir Tepat Waktu</option>
                 <option value="late">Terlambat</option>
@@ -569,15 +427,15 @@ export default function AttendanceRider() {
 
           {/* Catatan / Rute */}
           <div>
-            <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
+            <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1.5">
               Catatan Rute / Keterangan (Opsional)
             </label>
             <input
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Contoh: Rute keliling perkantoran Sudirman - Kuningan"
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs text-gray-800 focus:ring-2 focus:ring-coffee-400 outline-hidden"
+              placeholder="Contoh: Rute keliling Sudirman - Kuningan"
+              className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-xs text-gray-800 focus:ring-2 focus:ring-coffee-400 outline-hidden transition-all shadow-2xs"
             />
           </div>
 
@@ -587,16 +445,35 @@ export default function AttendanceRider() {
               type="button"
               onClick={closeActionModal}
               disabled={isSubmitting}
-              className="flex-1 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-700 font-semibold text-xs transition-colors"
+              className="flex-1 py-3 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-bold text-xs transition-colors"
             >
               Batal
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || (!capturedPhoto && !photoBlob)}
-              className="flex-1 py-2.5 rounded-xl bg-coffee-600 hover:bg-coffee-700 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+              disabled={isSubmitting}
+              className={`flex-1 py-3 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-98 ${
+                modalType === "clock_in"
+                  ? "bg-coffee-600 hover:bg-coffee-700 shadow-coffee-950/20"
+                  : "bg-amber-600 hover:bg-amber-700 shadow-amber-950/20"
+              }`}
             >
-              {isSubmitting ? "Menyimpan..." : "Kirim Presensi"}
+              {isSubmitting ? (
+                <>
+                  <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Menyimpan...</span>
+                </>
+              ) : modalType === "clock_in" ? (
+                <>
+                  <UserCheck className="w-4 h-4" />
+                  <span>Konfirmasi Absen Masuk</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Konfirmasi Absen Pulang</span>
+                </>
+              )}
             </button>
           </div>
         </form>
@@ -604,3 +481,4 @@ export default function AttendanceRider() {
     </div>
   );
 }
+
