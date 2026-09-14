@@ -37,8 +37,13 @@ if (!fs.existsSync(uploadPath)) {
 // Serve uploaded static files
 app.use(`/${UPLOAD_DIR_NAME}`, express.static(uploadPath));
 app.use('/uploads', express.static(uploadPath));
+app.use(`/api/${UPLOAD_DIR_NAME}`, express.static(uploadPath));
+app.use('/api/uploads', express.static(uploadPath));
 app.use(`/pos-kopi/${UPLOAD_DIR_NAME}`, express.static(uploadPath));
 app.use('/pos-kopi/uploads', express.static(uploadPath));
+app.use(`/pos-kopi/api/${UPLOAD_DIR_NAME}`, express.static(uploadPath));
+app.use('/pos-kopi/api/uploads', express.static(uploadPath));
+
 
 // Seamless URL prefix rewrite middleware to support /pos-kopi, /api, and clean routes
 app.use((req, res, next) => {
@@ -746,9 +751,78 @@ app.get('/api/riders/all/active', async (req, res) => {
   }
 });
 
+// Get Live Locations of all active riders for Owner & Cashier Map
+app.get('/api/riders/live-locations', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        r.id, 
+        r.code, 
+        r.name, 
+        r.phone, 
+        r.status, 
+        r.has_app_access,
+        r.current_lat, 
+        r.current_lng, 
+        r.last_location_time, 
+        r.is_duty,
+        COALESCE(sales_today.total_amount, 0) AS today_sales_amount,
+        COALESCE(sales_today.total_sales, 0) AS today_sales_count,
+        COALESCE(sales_today.total_cups, 0) AS today_cups_sold,
+        att_today.clock_in,
+        att_today.clock_out,
+        att_today.status AS attendance_status,
+        CASE 
+          WHEN r.last_location_time >= NOW() - INTERVAL 15 MINUTE AND r.is_duty = 1 THEN 'active'
+          WHEN r.is_duty = 1 THEN 'idle'
+          ELSE 'offline'
+        END AS tracking_status
+      FROM riders r
+      LEFT JOIN (
+        SELECT 
+          s.rider_id,
+          SUM(s.total_amount) AS total_amount,
+          COUNT(s.id) AS total_sales,
+          COALESCE((
+            SELECT SUM(si.qty) 
+            FROM sale_items si 
+            JOIN sales s2 ON si.sale_id = s2.id 
+            WHERE s2.rider_id = s.rider_id AND s2.sale_date = CURDATE() AND s2.status = 'completed'
+          ), 0) AS total_cups
+        FROM sales s
+        WHERE s.sale_date = CURDATE() AND s.status = 'completed' AND s.rider_id IS NOT NULL
+        GROUP BY s.rider_id
+      ) sales_today ON sales_today.rider_id = r.id
+      LEFT JOIN attendances att_today ON att_today.rider_id = r.id AND att_today.attendance_date = CURDATE()
+      WHERE r.status = 'active'
+      ORDER BY r.is_duty DESC, r.last_location_time DESC, r.name ASC
+    `);
+
+    // Summary stats
+    const totalActive = rows.filter((r) => r.tracking_status === 'active').length;
+    const totalOnDuty = rows.filter((r) => r.is_duty === 1).length;
+    const totalRiders = rows.length;
+
+    return sendSuccess(res, {
+      riders: rows,
+      summary: {
+        total_riders: totalRiders,
+        total_on_duty: totalOnDuty,
+        total_active_gps: totalActive,
+        server_time: new Date().toISOString()
+      }
+    });
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
 app.get('/api/riders/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
+    if (isNaN(id) || id <= 0) {
+      return sendError(res, 'ID rider tidak valid', 400);
+    }
     const [rows] = await pool.query('SELECT * FROM riders WHERE id = ?', [id]);
     const rider = rows[0];
     if (!rider) return sendError(res, 'Rider tidak ditemukan', 404);
@@ -1063,6 +1137,9 @@ app.get('/api/products', async (req, res) => {
 app.get('/api/products/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
+    if (isNaN(id) || id <= 0) {
+      return sendError(res, 'ID produk tidak valid', 400);
+    }
     const [rows] = await pool.query(`
       SELECT p.*, COALESCE(c.name, 'Tanpa Kategori') AS category_name 
       FROM products p 
@@ -2423,72 +2500,6 @@ app.post('/api/riders/location', async (req, res) => {
   }
 });
 
-// Get Live Locations of all active riders for Owner & Cashier Map
-app.get('/api/riders/live-locations', async (req, res) => {
-  try {
-    const [rows] = await pool.query(`
-      SELECT 
-        r.id, 
-        r.code, 
-        r.name, 
-        r.phone, 
-        r.status, 
-        r.has_app_access,
-        r.current_lat, 
-        r.current_lng, 
-        r.last_location_time, 
-        r.is_duty,
-        COALESCE(sales_today.total_amount, 0) AS today_sales_amount,
-        COALESCE(sales_today.total_sales, 0) AS today_sales_count,
-        COALESCE(sales_today.total_cups, 0) AS today_cups_sold,
-        att_today.clock_in,
-        att_today.clock_out,
-        att_today.status AS attendance_status,
-        CASE 
-          WHEN r.last_location_time >= NOW() - INTERVAL 15 MINUTE AND r.is_duty = 1 THEN 'active'
-          WHEN r.is_duty = 1 THEN 'idle'
-          ELSE 'offline'
-        END AS tracking_status
-      FROM riders r
-      LEFT JOIN (
-        SELECT 
-          s.rider_id,
-          SUM(s.total_amount) AS total_amount,
-          COUNT(s.id) AS total_sales,
-          COALESCE((
-            SELECT SUM(si.qty) 
-            FROM sale_items si 
-            JOIN sales s2 ON si.sale_id = s2.id 
-            WHERE s2.rider_id = s.rider_id AND s2.sale_date = CURDATE() AND s2.status = 'completed'
-          ), 0) AS total_cups
-        FROM sales s
-        WHERE s.sale_date = CURDATE() AND s.status = 'completed' AND s.rider_id IS NOT NULL
-        GROUP BY s.rider_id
-      ) sales_today ON sales_today.rider_id = r.id
-      LEFT JOIN attendances att_today ON att_today.rider_id = r.id AND att_today.attendance_date = CURDATE()
-      WHERE r.status = 'active'
-      ORDER BY r.is_duty DESC, r.last_location_time DESC, r.name ASC
-    `);
-
-    // Summary stats
-    const totalActive = rows.filter((r) => r.tracking_status === 'active').length;
-    const totalOnDuty = rows.filter((r) => r.is_duty === 1).length;
-    const totalRiders = rows.length;
-
-    return sendSuccess(res, {
-      riders: rows,
-      summary: {
-        total_riders: totalRiders,
-        total_on_duty: totalOnDuty,
-        total_active_gps: totalActive,
-        server_time: new Date().toISOString()
-      }
-    });
-  } catch (err) {
-    return sendError(res, err.message, 500);
-  }
-});
-
 // Fallback 404 handler for unknown endpoints
 app.use((req, res) => {
   return res.status(404).json({
@@ -2497,8 +2508,13 @@ app.use((req, res) => {
   });
 });
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`☕ Coffee POS & Rider API Server running on port ${PORT}`);
-  console.log(`📁 Upload folder ready: ${uploadPath}`);
-});
+// Export app for modular server / lazy-loader (e.g. api.kingcreativestudio.my.id/server.js)
+module.exports = app;
+
+// Start Server if run directly
+if (require.main === module || !module.parent) {
+  app.listen(PORT, () => {
+    console.log(`☕ Coffee POS & Rider API Server running on port ${PORT}`);
+    console.log(`📁 Upload folder ready: ${uploadPath}`);
+  });
+}

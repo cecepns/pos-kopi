@@ -18,8 +18,13 @@ export function getImageUrl(imagePath) {
   ) {
     return imagePath;
   }
-  return `${API_BASE_URL}/${imagePath.replace(/^\/+/, "")}`;
+  // Strip trailing /api so static uploads map to root app path
+  // e.g. https://api.kingcreativestudio.my.id/pos-kopi/api -> https://api.kingcreativestudio.my.id/pos-kopi
+  const rootBaseUrl = API_BASE_URL.replace(/\/api\/?$/i, "").replace(/\/+$/, "");
+  const cleanPath = imagePath.replace(/^\/+/, "").replace(/^api\//i, "");
+  return `${rootBaseUrl}/${cleanPath}`;
 }
+
 
 // Request interceptor to format path and attach auth token if available
 api.interceptors.request.use(
