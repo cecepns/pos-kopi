@@ -93,11 +93,23 @@ const pool = mysql.createPool({
   timezone: '+07:00'
 });
 
-// Test connection on startup
+// Test connection on startup & auto migrate missing columns
 (async () => {
   try {
     const conn = await pool.getConnection();
     console.log('✅ Connected to MySQL Database successfully!');
+
+    // Ensure store_settings has qris_image column
+    try {
+      const [columns] = await conn.query("SHOW COLUMNS FROM `store_settings` LIKE 'qris_image'");
+      if (columns.length === 0) {
+        await conn.query("ALTER TABLE `store_settings` ADD COLUMN `qris_image` VARCHAR(255) NULL");
+        console.log('✅ Added qris_image column to store_settings table');
+      }
+    } catch (colErr) {
+      console.warn('⚠️ Column check warning:', colErr.message);
+    }
+
     conn.release();
   } catch (err) {
     console.error(`❌ MySQL Connection Failed: ${err.message}`);
@@ -139,6 +151,47 @@ function generateSaleNumber() {
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
   const randomSuffix = Math.floor(1000 + Math.random() * 9000);
   return `INV-${dateStr}-${randomSuffix}`;
+}
+
+// Extract and resolve authenticated user from Authorization Bearer token or header
+async function getAuthUser(req) {
+  try {
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    let userId = null;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const tokenStr = authHeader.replace('Bearer ', '').trim();
+      const parts = tokenStr.split('-');
+      // format: token-<userId>-<timestamp>
+      if (parts.length >= 2 && parts[0] === 'token') {
+        userId = Number(parts[1]);
+      } else if (!isNaN(tokenStr)) {
+        userId = Number(tokenStr);
+      }
+    }
+    if (!userId && req.headers['x-user-id']) {
+      userId = Number(req.headers['x-user-id']);
+    }
+    if (!userId && req.query.user_id) {
+      userId = Number(req.query.user_id);
+    }
+
+    if (userId) {
+      const [users] = await pool.query(`
+        SELECT u.id, u.name, u.username, u.role, u.phone, u.status,
+               r.id AS rider_id, r.code AS rider_code, r.name AS rider_name
+        FROM users u
+        LEFT JOIN riders r ON r.user_id = u.id
+        WHERE u.id = ? AND u.status = 'active'
+      `, [userId]);
+      if (users.length > 0) {
+        return users[0];
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error('getAuthUser error:', err);
+    return null;
+  }
 }
 
 // Health Check
@@ -253,25 +306,51 @@ app.get('/api/auth/profile', async (req, res) => {
 // ------------------------------------------
 app.get('/api/dashboard/stats', async (req, res) => {
   try {
+    const authUser = await getAuthUser(req);
+    const isRider = authUser && authUser.role === 'rider';
+    const riderId = isRider ? authUser.rider_id : null;
+
     const todayStr = new Date().toISOString().split('T')[0];
     const currentMonth = todayStr.substring(0, 7);
+
+    let riderSalesFilter = '';
+    let riderItemFilter = '';
+    const statsParams = [todayStr];
+    const itemParams = [todayStr];
+    const monthParams = [`${currentMonth}%`];
+
+    if (isRider) {
+      if (riderId) {
+        riderSalesFilter = ' AND (s.rider_id = ? OR s.created_by = ?)';
+        statsParams.push(riderId, authUser.id);
+        monthParams.push(riderId, authUser.id);
+        riderItemFilter = ' AND (s.rider_id = ? OR s.created_by = ?)';
+        itemParams.push(riderId, authUser.id);
+      } else {
+        riderSalesFilter = ' AND s.created_by = ?';
+        statsParams.push(authUser.id);
+        monthParams.push(authUser.id);
+        riderItemFilter = ' AND s.created_by = ?';
+        itemParams.push(authUser.id);
+      }
+    }
 
     // Today stats
     const [todayRows] = await pool.query(`
       SELECT 
-        COALESCE(SUM(total_amount), 0) AS today_sales,
-        COUNT(id) AS today_transactions
-      FROM sales 
-      WHERE sale_date = ? AND status = 'completed'
-    `, [todayStr]);
+        COALESCE(SUM(s.total_amount), 0) AS today_sales,
+        COUNT(s.id) AS today_transactions
+      FROM sales s
+      WHERE s.sale_date = ? AND s.status = 'completed' ${riderSalesFilter}
+    `, statsParams);
 
     // Today cups / items sold
     const [itemRows] = await pool.query(`
       SELECT COALESCE(SUM(si.qty), 0) AS today_items
       FROM sale_items si
       JOIN sales s ON si.sale_id = s.id
-      WHERE s.sale_date = ? AND s.status = 'completed'
-    `, [todayStr]);
+      WHERE s.sale_date = ? AND s.status = 'completed' ${riderItemFilter}
+    `, itemParams);
 
     // Active riders count
     const [riderRows] = await pool.query(`SELECT COUNT(id) AS active_riders FROM riders WHERE status = 'active'`);
@@ -279,25 +358,41 @@ app.get('/api/dashboard/stats', async (req, res) => {
     // Month stats
     const [monthRows] = await pool.query(`
       SELECT 
-        COALESCE(SUM(total_amount), 0) AS month_sales,
-        COUNT(id) AS month_transactions
-      FROM sales 
-      WHERE sale_date LIKE ? AND status = 'completed'
-    `, [`${currentMonth}%`]);
-
-    // Top Rider Today
-    const [topRiderRows] = await pool.query(`
-      SELECT 
-        r.id, r.name, r.code,
-        COALESCE(SUM(s.total_amount), 0) AS total_sales,
-        COUNT(s.id) AS total_orders
+        COALESCE(SUM(s.total_amount), 0) AS month_sales,
+        COUNT(s.id) AS month_transactions
       FROM sales s
-      JOIN riders r ON s.rider_id = r.id
-      WHERE s.sale_date = ? AND s.status = 'completed'
-      GROUP BY r.id, r.name, r.code
-      ORDER BY total_sales DESC
-      LIMIT 1
-    `, [todayStr]);
+      WHERE s.sale_date LIKE ? AND s.status = 'completed' ${riderSalesFilter}
+    `, monthParams);
+
+    // Top Rider Today (If rider, shows own info)
+    let topRiderRows = [];
+    if (isRider && riderId) {
+      const [ownRiderRows] = await pool.query(`
+        SELECT 
+          r.id, r.name, r.code,
+          COALESCE(SUM(s.total_amount), 0) AS total_sales,
+          COUNT(s.id) AS total_orders
+        FROM riders r
+        LEFT JOIN sales s ON s.rider_id = r.id AND s.sale_date = ? AND s.status = 'completed'
+        WHERE r.id = ?
+        GROUP BY r.id, r.name, r.code
+      `, [todayStr, riderId]);
+      topRiderRows = ownRiderRows;
+    } else {
+      const [topRows] = await pool.query(`
+        SELECT 
+          r.id, r.name, r.code,
+          COALESCE(SUM(s.total_amount), 0) AS total_sales,
+          COUNT(s.id) AS total_orders
+        FROM sales s
+        JOIN riders r ON s.rider_id = r.id
+        WHERE s.sale_date = ? AND s.status = 'completed'
+        GROUP BY r.id, r.name, r.code
+        ORDER BY total_sales DESC
+        LIMIT 1
+      `, [todayStr]);
+      topRiderRows = topRows;
+    }
 
     return sendSuccess(res, {
       today_sales: Number(todayRows[0]?.today_sales || 0),
@@ -315,12 +410,28 @@ app.get('/api/dashboard/stats', async (req, res) => {
 
 app.get('/api/dashboard/chart', async (req, res) => {
   try {
+    const authUser = await getAuthUser(req);
+    const isRider = authUser && authUser.role === 'rider';
+    const riderId = isRider ? authUser.rider_id : null;
+
     const { period = '7days' } = req.query; // 'today', '7days', 'this_month'
     let labels = [];
     let salesData = [];
     let ordersData = [];
 
     const now = new Date();
+
+    let riderFilter = '';
+    const extraParams = [];
+    if (isRider) {
+      if (riderId) {
+        riderFilter = ' AND (s.rider_id = ? OR s.created_by = ?)';
+        extraParams.push(riderId, authUser.id);
+      } else {
+        riderFilter = ' AND s.created_by = ?';
+        extraParams.push(authUser.id);
+      }
+    }
 
     if (period === '7days') {
       const dates = [];
@@ -331,11 +442,11 @@ app.get('/api/dashboard/chart', async (req, res) => {
       }
 
       const [rows] = await pool.query(`
-        SELECT sale_date, COALESCE(SUM(total_amount), 0) AS total_sales, COUNT(id) AS total_orders
-        FROM sales
-        WHERE sale_date >= ? AND sale_date <= ? AND status = 'completed'
-        GROUP BY sale_date
-      `, [dates[0], dates[dates.length - 1]]);
+        SELECT s.sale_date, COALESCE(SUM(s.total_amount), 0) AS total_sales, COUNT(s.id) AS total_orders
+        FROM sales s
+        WHERE s.sale_date >= ? AND s.sale_date <= ? AND s.status = 'completed' ${riderFilter}
+        GROUP BY s.sale_date
+      `, [dates[0], dates[dates.length - 1], ...extraParams]);
 
       const rowMap = {};
       rows.forEach(r => {
@@ -352,12 +463,12 @@ app.get('/api/dashboard/chart', async (req, res) => {
     } else if (period === 'this_month') {
       const currentMonth = now.toISOString().substring(0, 7);
       const [rows] = await pool.query(`
-        SELECT sale_date, COALESCE(SUM(total_amount), 0) AS total_sales, COUNT(id) AS total_orders
-        FROM sales
-        WHERE sale_date LIKE ? AND status = 'completed'
-        GROUP BY sale_date
-        ORDER BY sale_date ASC
-      `, [`${currentMonth}%`]);
+        SELECT s.sale_date, COALESCE(SUM(s.total_amount), 0) AS total_sales, COUNT(s.id) AS total_orders
+        FROM sales s
+        WHERE s.sale_date LIKE ? AND s.status = 'completed' ${riderFilter}
+        GROUP BY s.sale_date
+        ORDER BY s.sale_date ASC
+      `, [`${currentMonth}%`, ...extraParams]);
 
       rows.forEach(r => {
         const dStr = typeof r.sale_date === 'string' ? r.sale_date : r.sale_date.toISOString().split('T')[0];
@@ -371,14 +482,14 @@ app.get('/api/dashboard/chart', async (req, res) => {
       const todayStr = now.toISOString().split('T')[0];
       const [rows] = await pool.query(`
         SELECT 
-          DATE_FORMAT(created_at, '%H:00') AS hour_slot,
-          COALESCE(SUM(total_amount), 0) AS total_sales,
-          COUNT(id) AS total_orders
-        FROM sales
-        WHERE sale_date = ? AND status = 'completed'
+          DATE_FORMAT(s.created_at, '%H:00') AS hour_slot,
+          COALESCE(SUM(s.total_amount), 0) AS total_sales,
+          COUNT(s.id) AS total_orders
+        FROM sales s
+        WHERE s.sale_date = ? AND s.status = 'completed' ${riderFilter}
         GROUP BY hour_slot
         ORDER BY hour_slot ASC
-      `, [todayStr]);
+      `, [todayStr, ...extraParams]);
 
       rows.forEach(r => {
         labels.push(r.hour_slot);
@@ -399,6 +510,17 @@ app.get('/api/dashboard/chart', async (req, res) => {
 
 app.get('/api/dashboard/top-riders', async (req, res) => {
   try {
+    const authUser = await getAuthUser(req);
+    const isRider = authUser && authUser.role === 'rider';
+    const riderId = isRider ? authUser.rider_id : null;
+
+    let riderWhere = '';
+    const queryParams = [];
+    if (isRider && riderId) {
+      riderWhere = 'WHERE r.id = ?';
+      queryParams.push(riderId);
+    }
+
     const [rows] = await pool.query(`
       SELECT 
         r.id, r.name, r.code, r.has_app_access,
@@ -412,9 +534,10 @@ app.get('/api/dashboard/top-riders', async (req, res) => {
         ), 0) AS total_items
       FROM riders r
       LEFT JOIN sales s ON r.id = s.rider_id AND s.status = 'completed'
+      ${riderWhere}
       GROUP BY r.id, r.name, r.code, r.has_app_access
       ORDER BY total_sales DESC
-    `);
+    `, queryParams);
 
     const formatted = rows.map(r => ({
       id: r.id,
@@ -434,6 +557,22 @@ app.get('/api/dashboard/top-riders', async (req, res) => {
 
 app.get('/api/dashboard/popular-products', async (req, res) => {
   try {
+    const authUser = await getAuthUser(req);
+    const isRider = authUser && authUser.role === 'rider';
+    const riderId = isRider ? authUser.rider_id : null;
+
+    let riderFilter = '';
+    const queryParams = [];
+    if (isRider) {
+      if (riderId) {
+        riderFilter = ' AND (s.rider_id = ? OR s.created_by = ?)';
+        queryParams.push(riderId, authUser.id);
+      } else {
+        riderFilter = ' AND s.created_by = ?';
+        queryParams.push(authUser.id);
+      }
+    }
+
     const [rows] = await pool.query(`
       SELECT 
         p.id, p.name, p.price, p.unit, 
@@ -443,11 +582,11 @@ app.get('/api/dashboard/popular-products', async (req, res) => {
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
       LEFT JOIN sale_items si ON p.id = si.product_id
-      LEFT JOIN sales s ON si.sale_id = s.id AND s.status = 'completed'
+      LEFT JOIN sales s ON si.sale_id = s.id AND s.status = 'completed' ${riderFilter}
       GROUP BY p.id, p.name, p.price, p.unit, c.name
       ORDER BY total_sold DESC
       LIMIT 5
-    `);
+    `, queryParams);
 
     const formatted = rows.map(r => ({
       id: r.id,
@@ -518,9 +657,19 @@ app.get('/api/riders', async (req, res) => {
 
 app.get('/api/riders/all/active', async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT id, code, name, has_app_access, phone FROM riders WHERE status = 'active' ORDER BY name ASC`
-    );
+    const authUser = await getAuthUser(req);
+    const isRider = authUser && authUser.role === 'rider';
+    const riderId = isRider ? authUser.rider_id : null;
+
+    let query = `SELECT id, code, name, has_app_access, phone FROM riders WHERE status = 'active'`;
+    const params = [];
+    if (isRider && riderId) {
+      query += ` AND id = ?`;
+      params.push(riderId);
+    }
+    query += ` ORDER BY name ASC`;
+
+    const [rows] = await pool.query(query, params);
     return sendSuccess(res, rows);
   } catch (err) {
     return sendError(res, err.message, 500);
@@ -954,6 +1103,10 @@ app.delete('/api/products/:id', async (req, res) => {
 // ------------------------------------------
 app.get('/api/sales', async (req, res) => {
   try {
+    const authUser = await getAuthUser(req);
+    const isRider = authUser && authUser.role === 'rider';
+    const riderIdForced = isRider ? authUser.rider_id : null;
+
     const {
       search = '',
       page = 1,
@@ -974,14 +1127,23 @@ app.get('/api/sales', async (req, res) => {
     let whereClause = 'WHERE 1=1';
     const params = [];
 
+    // STRICT ISOLATION FOR RIDERS: Rider can only view their own transactions
+    if (isRider) {
+      if (riderIdForced) {
+        whereClause += ' AND (s.rider_id = ? OR s.created_by = ?)';
+        params.push(riderIdForced, authUser.id);
+      } else {
+        whereClause += ' AND s.created_by = ?';
+        params.push(authUser.id);
+      }
+    } else if (rider_id) {
+      whereClause += ' AND s.rider_id = ?';
+      params.push(Number(rider_id));
+    }
+
     if (search) {
       whereClause += ' AND (s.sale_number LIKE ? OR r.name LIKE ? OR s.notes LIKE ?)';
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    }
-
-    if (rider_id) {
-      whereClause += ' AND s.rider_id = ?';
-      params.push(Number(rider_id));
     }
 
     if (sales_channel) {
@@ -1054,6 +1216,9 @@ app.get('/api/sales', async (req, res) => {
 app.get('/api/sales/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
+    const authUser = await getAuthUser(req);
+    const isRider = authUser && authUser.role === 'rider';
+
     const [rows] = await pool.query(`
       SELECT 
         s.*,
@@ -1069,10 +1234,18 @@ app.get('/api/sales/:id', async (req, res) => {
 
     if (rows.length === 0) return sendError(res, 'Transaksi tidak ditemukan', 404);
 
+    const sale = rows[0];
+    if (isRider) {
+      const isOwnerOfSale = (authUser.rider_id && sale.rider_id === authUser.rider_id) || (sale.created_by === authUser.id);
+      if (!isOwnerOfSale) {
+        return sendError(res, 'Akses ditolak: Anda hanya dapat melihat data transaksi Anda sendiri', 403);
+      }
+    }
+
     const [itemRows] = await pool.query('SELECT * FROM sale_items WHERE sale_id = ?', [id]);
 
     return sendSuccess(res, {
-      ...rows[0],
+      ...sale,
       items: itemRows
     });
   } catch (err) {
@@ -1083,6 +1256,9 @@ app.get('/api/sales/:id', async (req, res) => {
 app.post('/api/sales', async (req, res) => {
   const conn = await pool.getConnection();
   try {
+    const authUser = await getAuthUser(req);
+    const isRider = authUser && authUser.role === 'rider';
+
     const {
       rider_id = null,
       sales_channel = 'counter',
@@ -1097,6 +1273,18 @@ app.post('/api/sales', async (req, res) => {
 
     if (!items || items.length === 0) {
       return sendError(res, 'Pilih minimal satu produk untuk transaksi!', 400);
+    }
+
+    // Determine effective rider_id and created_by
+    let effectiveRiderId = rider_id ? Number(rider_id) : null;
+    let effectiveCreatedBy = authUser ? authUser.id : (Number(created_by) || 1);
+    let effectiveSalesChannel = sales_channel || (effectiveRiderId ? 'rider' : 'counter');
+    let effectiveInputSource = input_source || (authUser ? authUser.role : 'admin');
+
+    if (isRider) {
+      effectiveRiderId = authUser.rider_id || null;
+      effectiveSalesChannel = 'rider';
+      effectiveInputSource = 'rider';
     }
 
     let totalAmount = 0;
@@ -1144,10 +1332,10 @@ app.post('/api/sales', async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?)`,
       [
         saleNumber,
-        rider_id ? Number(rider_id) : null,
-        sales_channel || (rider_id ? 'rider' : 'counter'),
-        input_source || 'admin',
-        Number(created_by) || 1,
+        effectiveRiderId,
+        effectiveSalesChannel,
+        effectiveInputSource,
+        effectiveCreatedBy,
         actualSaleDate,
         totalAmount,
         paid,
@@ -1191,8 +1379,18 @@ app.post('/api/sales', async (req, res) => {
 app.put('/api/sales/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
+    const authUser = await getAuthUser(req);
+    const isRider = authUser && authUser.role === 'rider';
+
     const [rows] = await pool.query('SELECT * FROM sales WHERE id = ?', [id]);
     if (rows.length === 0) return sendError(res, 'Transaksi tidak ditemukan', 404);
+
+    if (isRider) {
+      const isOwnerOfSale = (authUser.rider_id && rows[0].rider_id === authUser.rider_id) || (rows[0].created_by === authUser.id);
+      if (!isOwnerOfSale) {
+        return sendError(res, 'Akses ditolak: Anda hanya dapat mengubah data transaksi Anda sendiri', 403);
+      }
+    }
 
     const { notes, status, payment_method, sale_date, rider_id } = req.body;
 
@@ -1209,7 +1407,7 @@ app.put('/api/sales/:id', async (req, res) => {
         status ?? null,
         payment_method ?? null,
         sale_date ?? null,
-        rider_id !== undefined ? (rider_id ? Number(rider_id) : null) : rows[0].rider_id,
+        isRider ? (authUser.rider_id || rows[0].rider_id) : (rider_id !== undefined ? (rider_id ? Number(rider_id) : null) : rows[0].rider_id),
         id
       ]
     );
@@ -1224,8 +1422,18 @@ app.put('/api/sales/:id', async (req, res) => {
 app.delete('/api/sales/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
+    const authUser = await getAuthUser(req);
+    const isRider = authUser && authUser.role === 'rider';
+
     const [rows] = await pool.query('SELECT * FROM sales WHERE id = ?', [id]);
     if (rows.length === 0) return sendError(res, 'Transaksi tidak ditemukan', 404);
+
+    if (isRider) {
+      const isOwnerOfSale = (authUser.rider_id && rows[0].rider_id === authUser.rider_id) || (rows[0].created_by === authUser.id);
+      if (!isOwnerOfSale) {
+        return sendError(res, 'Akses ditolak: Anda hanya dapat membatalkan data transaksi Anda sendiri', 403);
+      }
+    }
 
     await pool.query('UPDATE sales SET status = "cancelled" WHERE id = ?', [id]);
     const [updated] = await pool.query('SELECT * FROM sales WHERE id = ?', [id]);
@@ -1238,7 +1446,18 @@ app.delete('/api/sales/:id', async (req, res) => {
 // DAILY RECAP PER RIDER
 app.get('/api/sales/recap/daily', async (req, res) => {
   try {
+    const authUser = await getAuthUser(req);
+    const isRider = authUser && authUser.role === 'rider';
+    const riderId = isRider ? authUser.rider_id : null;
+
     const { date = new Date().toISOString().split('T')[0] } = req.query;
+
+    let riderFilter = '';
+    const queryParams = [date, date];
+    if (isRider && riderId) {
+      riderFilter = 'WHERE r.id = ?';
+      queryParams.push(riderId);
+    }
 
     const [rows] = await pool.query(`
       SELECT 
@@ -1269,8 +1488,9 @@ app.get('/api/sales/recap/daily', async (req, res) => {
         WHERE s1.sale_date = ? AND s1.status = 'completed' AND s1.rider_id IS NOT NULL
         GROUP BY s1.rider_id
       ) s ON r.id = s.rider_id
+      ${riderFilter}
       ORDER BY r.name ASC
-    `, [date, date]);
+    `, queryParams);
 
     const formatted = rows.map(r => ({
       ...r,
@@ -1290,7 +1510,18 @@ app.get('/api/sales/recap/daily', async (req, res) => {
 // ------------------------------------------
 app.get('/api/rider-performance', async (req, res) => {
   try {
+    const authUser = await getAuthUser(req);
+    const isRider = authUser && authUser.role === 'rider';
+    const riderId = isRider ? authUser.rider_id : null;
+
     const { period_month = new Date().toISOString().substring(0, 7) } = req.query;
+
+    let riderFilter = '';
+    const queryParams = [`${period_month}%`, `${period_month}%`, period_month];
+    if (isRider && riderId) {
+      riderFilter = 'WHERE r.id = ?';
+      queryParams.push(riderId);
+    }
 
     const [rows] = await pool.query(`
       SELECT 
@@ -1323,8 +1554,9 @@ app.get('/api/rider-performance', async (req, res) => {
         GROUP BY s1.rider_id
       ) s ON r.id = s.rider_id
       LEFT JOIN rider_targets t ON r.id = t.rider_id AND t.period_month = ?
+      ${riderFilter}
       ORDER BY total_omzet DESC
-    `, [`${period_month}%`, `${period_month}%`, period_month]);
+    `, queryParams);
 
     const rankedList = rows.map((r, index) => {
       const totalOmzet = Number(r.total_omzet || 0);
@@ -1643,19 +1875,28 @@ app.get('/api/settings', async (req, res) => {
       address: '',
       phone: '',
       receipt_footer: '',
-      tax_percentage: 0
+      tax_percentage: 0,
+      qris_image: null
     });
   } catch (err) {
     return sendError(res, err.message, 500);
   }
 });
 
-app.put('/api/settings', async (req, res) => {
+app.put('/api/settings', upload.single('qris_image'), async (req, res) => {
   try {
-    const { store_name, tagline, address, phone, receipt_footer, tax_percentage } = req.body;
-    const [existing] = await pool.query('SELECT id FROM store_settings ORDER BY id ASC LIMIT 1');
+    const { store_name, tagline, address, phone, receipt_footer, tax_percentage, remove_qris } = req.body;
+    const [existing] = await pool.query('SELECT id, qris_image FROM store_settings ORDER BY id ASC LIMIT 1');
+
+    let qrisImagePath = undefined;
+    if (req.file) {
+      qrisImagePath = `/${UPLOAD_DIR_NAME}/${req.file.filename}`;
+    } else if (remove_qris === 'true' || remove_qris === true || remove_qris === '1') {
+      qrisImagePath = null;
+    }
 
     if (existing.length > 0) {
+      const finalQris = qrisImagePath !== undefined ? qrisImagePath : existing[0].qris_image;
       await pool.query(
         `UPDATE store_settings SET 
            store_name = COALESCE(?, store_name),
@@ -1663,7 +1904,8 @@ app.put('/api/settings', async (req, res) => {
            address = COALESCE(?, address),
            phone = COALESCE(?, phone),
            receipt_footer = COALESCE(?, receipt_footer),
-           tax_percentage = COALESCE(?, tax_percentage)
+           tax_percentage = COALESCE(?, tax_percentage),
+           qris_image = ?
          WHERE id = ?`,
         [
           store_name ?? null,
@@ -1671,7 +1913,8 @@ app.put('/api/settings', async (req, res) => {
           address ?? null,
           phone ?? null,
           receipt_footer ?? null,
-          tax_percentage !== undefined ? Number(tax_percentage) : null,
+          tax_percentage !== undefined && tax_percentage !== '' ? Number(tax_percentage) : null,
+          finalQris,
           existing[0].id
         ]
       );
@@ -1679,9 +1922,17 @@ app.put('/api/settings', async (req, res) => {
       return sendSuccess(res, updated[0], null, 'Pengaturan toko berhasil disimpan');
     } else {
       const [result] = await pool.query(
-        `INSERT INTO store_settings (store_name, tagline, address, phone, receipt_footer, tax_percentage)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [store_name || '', tagline || '', address || '', phone || '', receipt_footer || '', Number(tax_percentage) || 0]
+        `INSERT INTO store_settings (store_name, tagline, address, phone, receipt_footer, tax_percentage, qris_image)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          store_name || '',
+          tagline || '',
+          address || '',
+          phone || '',
+          receipt_footer || '',
+          tax_percentage ? Number(tax_percentage) : 0,
+          qrisImagePath || null
+        ]
       );
       const [created] = await pool.query('SELECT * FROM store_settings WHERE id = ?', [result.insertId]);
       return sendSuccess(res, created[0], null, 'Pengaturan toko berhasil disimpan');

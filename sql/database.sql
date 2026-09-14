@@ -137,6 +137,7 @@ CREATE TABLE `store_settings` (
   `phone` VARCHAR(30) NULL DEFAULT '0819-1119-0207',
   `receipt_footer` TEXT NULL,
   `tax_percentage` DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+  `qris_image` VARCHAR(255) NULL,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -146,8 +147,8 @@ CREATE TABLE `store_settings` (
 -- =========================================================================
 
 -- Insert Store Settings
-INSERT INTO `store_settings` (`id`, `store_name`, `tagline`, `address`, `phone`, `receipt_footer`, `tax_percentage`)
-VALUES (1, 'Kopi Keliling & POS Store', 'Cita Rasa Kopi Nusantara', 'Jl. Merdeka No. 45, Jakarta Selatan', '0819-1119-0207', 'Terima kasih atas kunjungan Anda! Follow IG: @kopinusantara', 0.00);
+INSERT INTO `store_settings` (`id`, `store_name`, `tagline`, `address`, `phone`, `receipt_footer`, `tax_percentage`, `qris_image`)
+VALUES (1, 'Kopi Keliling & POS Store', 'Cita Rasa Kopi Nusantara', 'Jl. Merdeka No. 45, Jakarta Selatan', '0819-1119-0207', 'Terima kasih atas kunjungan Anda! Follow IG: @kopinusantara', 0.00, NULL);
 
 -- Insert Users (Password: password123)
 INSERT INTO `users` (`id`, `name`, `username`, `password`, `role`, `phone`, `status`) VALUES

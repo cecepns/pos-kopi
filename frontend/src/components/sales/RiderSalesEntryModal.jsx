@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import Modal from "../common/Modal";
 import { formatRupiah } from "../../utils/formatters";
+import { getImageUrl } from "../../utils/api";
 
 export default function RiderSalesEntryModal({
   isOpen,
@@ -26,6 +27,7 @@ export default function RiderSalesEntryModal({
   onSubmit,
   isLoading = false,
   preselectedRiderId = null,
+  storeSettings = null,
 }) {
   const [riderId, setRiderId] = useState(preselectedRiderId || "");
   const [saleDate, setSaleDate] = useState(new Date().toISOString().split("T")[0]);
@@ -380,6 +382,21 @@ export default function RiderSalesEntryModal({
             />
           </div>
         </div>
+
+        {/* QRIS Quick Visual if selected */}
+        {paymentMethod === "qris" && storeSettings?.qris_image && (
+          <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 flex items-center gap-3">
+            <img
+              src={getImageUrl(storeSettings.qris_image)}
+              alt="QRIS"
+              className="w-16 h-16 object-contain bg-white p-1 rounded-lg border border-amber-200 shrink-0"
+            />
+            <div className="text-[11px] text-gray-700">
+              <span className="font-bold text-coffee-800 block">QRIS Kedai Aktif</span>
+              <span>Pastikan transaksi via QRIS sudah berhasil masuk ke rekening/e-wallet kedai.</span>
+            </div>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex gap-2.5 pt-2 border-t border-gray-100">

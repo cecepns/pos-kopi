@@ -272,6 +272,7 @@ export default function PosCashier() {
         riders={riders}
         onSubmitPayment={handleCheckout}
         isLoading={isSubmitting}
+        storeSettings={storeSettings}
       />
 
       {/* Receipt Modal */}

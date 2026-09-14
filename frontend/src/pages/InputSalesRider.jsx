@@ -15,6 +15,7 @@ import { API_ENDPOINTS } from "../utils/endpoints";
 import { formatRupiah, formatDateIndo, formatDateTimeIndo } from "../utils/formatters";
 import { usePagination } from "../hooks/usePagination";
 import { useDebounce } from "../hooks/useDebounce";
+import { useAuth } from "../hooks/useAuth";
 import RiderSalesEntryModal from "../components/sales/RiderSalesEntryModal";
 import ReceiptModal from "../components/pos/ReceiptModal";
 import Pagination from "../components/common/Pagination";
@@ -24,6 +25,7 @@ import LoadingSkeleton from "../components/common/LoadingSkeleton";
 import toast from "react-hot-toast";
 
 export default function InputSalesRider() {
+  const { user, isRider, riderInfo } = useAuth();
   const [riders, setRiders] = useState([]);
   const [products, setProducts] = useState([]);
   const [salesList, setSalesList] = useState([]);
@@ -33,12 +35,16 @@ export default function InputSalesRider() {
   // Filter & Search
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 350);
-  const [selectedRiderFilter, setSelectedRiderFilter] = useState("");
+  const [selectedRiderFilter, setSelectedRiderFilter] = useState(
+    isRider && riderInfo ? String(riderInfo.id) : ""
+  );
   const { page, limit, total, totalPages, setPage, setLimit, updatePaginationMeta } = usePagination(10);
 
   // Modals
   const [isEntryOpen, setIsEntryOpen] = useState(false);
-  const [preselectedRiderId, setPreselectedRiderId] = useState(null);
+  const [preselectedRiderId, setPreselectedRiderId] = useState(
+    isRider && riderInfo ? riderInfo.id : null
+  );
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -66,7 +72,7 @@ export default function InputSalesRider() {
         page,
         limit,
         search: debouncedSearch,
-        rider_id: selectedRiderFilter || undefined,
+        rider_id: isRider && riderInfo ? riderInfo.id : (selectedRiderFilter || undefined),
         sales_channel: "rider", // filter only rider transactions
       });
 
@@ -90,7 +96,7 @@ export default function InputSalesRider() {
   }, [page, limit, debouncedSearch, selectedRiderFilter]);
 
   const handleOpenEntryForRider = (riderId) => {
-    setPreselectedRiderId(riderId);
+    setPreselectedRiderId(riderId || (isRider && riderInfo ? riderInfo.id : null));
     setIsEntryOpen(true);
   };
 
@@ -120,12 +126,16 @@ export default function InputSalesRider() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-xl sm:text-2xl font-black text-espresso">
-              Input Sales Rider Keliling
+              {isRider ? "Input Penjualan Saya" : "Input Sales Rider Keliling"}
             </h1>
-            <Badge variant="coffee">Khusus Operasional</Badge>
+            <Badge variant="coffee">
+              {isRider ? `${riderInfo?.code || 'Rider'} - ${riderInfo?.name || user?.name}` : "Khusus Operasional"}
+            </Badge>
           </div>
           <p className="text-xs sm:text-sm text-gray-500">
-            Catat penjualan harian berdasarkan nama rider, termasuk rider yang tidak memiliki HP.
+            {isRider
+              ? "Catat laporan penjualan kopi keliling Anda hari ini dengan cepat dan akurat."
+              : "Catat penjualan harian berdasarkan nama rider, termasuk rider yang tidak memiliki HP."}
           </p>
         </div>
 
@@ -135,86 +145,92 @@ export default function InputSalesRider() {
           className="px-4 py-2.5 bg-coffee-600 hover:bg-coffee-700 text-white font-bold text-sm rounded-xl shadow-md shadow-coffee-950/20 transition-all flex items-center justify-center gap-2"
         >
           <Plus className="w-4 h-4" />
-          <span>+ Input Sales Rider</span>
+          <span>{isRider ? "+ Catat Penjualan Baru" : "+ Input Sales Rider"}</span>
         </button>
       </div>
 
       {/* Quick Rider Cards (Fast Action per Rider) */}
-      <div>
-        <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">
-          Daftar Rider Aktif (Klik untuk Langsung Input Catatan)
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-          {riders.map((r) => {
-            const hasPhone = r.has_app_access === 1;
-            return (
-              <div
-                key={r.id}
-                onClick={() => handleOpenEntryForRider(r.id)}
-                className="group p-4 bg-white rounded-2xl border border-amber-100 hover:border-coffee-400 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-extrabold text-coffee-700 bg-amber-50 px-2 py-0.5 rounded-md">
-                      {r.code}
-                    </span>
-                    {hasPhone ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
-                        <Smartphone className="w-3 h-3" />
-                        Punya HP
+      {!isRider && (
+        <div>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">
+            Daftar Rider Aktif (Klik untuk Langsung Input Catatan)
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {riders.map((r) => {
+              const hasPhone = r.has_app_access === 1;
+              return (
+                <div
+                  key={r.id}
+                  onClick={() => handleOpenEntryForRider(r.id)}
+                  className="group p-4 bg-white rounded-2xl border border-amber-100 hover:border-coffee-400 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-extrabold text-coffee-700 bg-amber-50 px-2 py-0.5 rounded-md">
+                        {r.code}
                       </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full">
-                        <PhoneOff className="w-3 h-3" />
-                        Tanpa HP
-                      </span>
-                    )}
+                      {hasPhone ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
+                          <Smartphone className="w-3 h-3" />
+                          Punya HP
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full">
+                          <PhoneOff className="w-3 h-3" />
+                          Tanpa HP
+                        </span>
+                      )}
+                    </div>
+                    <h4 className="font-bold text-sm text-espresso group-hover:text-coffee-700 transition-colors line-clamp-1">
+                      {r.name}
+                    </h4>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      {hasPhone ? r.phone || "Akses Mandiri" : "Setoran fisik via Kasir"}
+                    </p>
                   </div>
-                  <h4 className="font-bold text-sm text-espresso group-hover:text-coffee-700 transition-colors line-clamp-1">
-                    {r.name}
-                  </h4>
-                  <p className="text-[11px] text-gray-400 mt-0.5">
-                    {hasPhone ? r.phone || "Akses Mandiri" : "Setoran fisik via Kasir"}
-                  </p>
-                </div>
 
-                <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-coffee-600 group-hover:text-coffee-700">
-                  <span>Input Catatan</span>
-                  <Plus className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                  <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-coffee-600 group-hover:text-coffee-700">
+                    <span>Input Catatan</span>
+                    <Plus className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Sales Transactions History */}
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-amber-100 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
           <div>
-            <h3 className="text-base font-bold text-espresso">Histori Catatan Sales Rider</h3>
+            <h3 className="text-base font-bold text-espresso">
+              {isRider ? "Histori Penjualan Saya" : "Histori Catatan Sales Rider"}
+            </h3>
             <p className="text-xs text-gray-500">Daftar transaksi penjualan yang telah diinput ke sistem</p>
           </div>
 
           {/* Filters & Search */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-            <select
-              value={selectedRiderFilter}
-              onChange={(e) => setSelectedRiderFilter(e.target.value)}
-              className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-espresso focus:ring-2 focus:ring-coffee-400 outline-hidden"
-            >
-              <option value="">Semua Rider</option>
-              {riders.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
+            {!isRider && (
+              <select
+                value={selectedRiderFilter}
+                onChange={(e) => setSelectedRiderFilter(e.target.value)}
+                className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-espresso focus:ring-2 focus:ring-coffee-400 outline-hidden"
+              >
+                <option value="">Semua Rider</option>
+                {riders.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            )}
 
             <SearchInput
               value={search}
               onChange={setSearch}
-              placeholder="Cari nota, nama rider..."
+              placeholder="Cari no nota, catatan..."
               className="w-full sm:w-60"
             />
           </div>
@@ -341,6 +357,7 @@ export default function InputSalesRider() {
         preselectedRiderId={preselectedRiderId}
         onSubmit={handleSaveRiderSales}
         isLoading={isSubmitting}
+        storeSettings={storeSettings}
       />
 
       {/* Thermal Receipt Preview Modal */}

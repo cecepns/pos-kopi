@@ -11,12 +11,14 @@ import {
   Bike,
   XCircle,
   Download,
+  ShieldAlert,
 } from "lucide-react";
 import { request } from "../utils/request";
 import { API_ENDPOINTS } from "../utils/endpoints";
 import { formatRupiah, formatDateIndo, formatDateTimeIndo } from "../utils/formatters";
 import { usePagination } from "../hooks/usePagination";
 import { useDebounce } from "../hooks/useDebounce";
+import { useAuth } from "../hooks/useAuth";
 import Pagination from "../components/common/Pagination";
 import SearchInput from "../components/common/SearchInput";
 import Modal from "../components/common/Modal";
@@ -27,6 +29,7 @@ import LoadingSkeleton from "../components/common/LoadingSkeleton";
 import toast from "react-hot-toast";
 
 export default function Transactions() {
+  const { user, isRider, riderInfo } = useAuth();
   const [sales, setSales] = useState([]);
   const [riders, setRiders] = useState([]);
   const [storeSettings, setStoreSettings] = useState(null);
@@ -35,8 +38,8 @@ export default function Transactions() {
   // Filters
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 350);
-  const [riderFilter, setRiderFilter] = useState("");
-  const [channelFilter, setChannelFilter] = useState("");
+  const [riderFilter, setRiderFilter] = useState(isRider && riderInfo ? String(riderInfo.id) : "");
+  const [channelFilter, setChannelFilter] = useState(isRider ? "rider" : "");
   const [paymentFilter, setPaymentFilter] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -56,8 +59,8 @@ export default function Transactions() {
         page,
         limit,
         search: debouncedSearch,
-        rider_id: riderFilter || undefined,
-        sales_channel: channelFilter || undefined,
+        rider_id: isRider && riderInfo ? riderInfo.id : (riderFilter || undefined),
+        sales_channel: isRider ? "rider" : (channelFilter || undefined),
         payment_method: paymentFilter || undefined,
         start_date: startDate || undefined,
         end_date: endDate || undefined,
@@ -174,11 +177,20 @@ export default function Transactions() {
       {/* Page Title */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-espresso">
-            Data Transaksi Penjualan
-          </h1>
-          <p className="text-xs sm:text-sm text-gray-500">
-            Daftar transaksi kasir counter dan setoran keliling rider beserta audit trail
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-black text-espresso">
+              {isRider ? "Riwayat Transaksi Saya" : "Data Transaksi Penjualan"}
+            </h1>
+            {isRider && (
+              <Badge variant="coffee">
+                {riderInfo?.code || "Rider"}: {riderInfo?.name || user?.name}
+              </Badge>
+            )}
+          </div>
+          <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
+            {isRider
+              ? "Daftar seluruh transaksi penjualan yang Anda catat sebagai rider keliling"
+              : "Daftar transaksi kasir counter dan setoran keliling rider beserta audit trail"}
           </p>
         </div>
 
@@ -196,44 +208,48 @@ export default function Transactions() {
       <div className="bg-white p-4 rounded-3xl border border-amber-100 shadow-xs space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
           {/* Search */}
-          <div className="md:col-span-2">
+          <div className={isRider ? "md:col-span-3" : "md:col-span-2"}>
             <SearchInput
               value={search}
               onChange={setSearch}
-              placeholder="Cari no nota, nama rider, catatan..."
+              placeholder="Cari no nota, catatan..."
               className="w-full"
             />
           </div>
 
-          {/* Rider Filter */}
-          <div>
-            <select
-              value={riderFilter}
-              onChange={(e) => setRiderFilter(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-espresso focus:ring-2 focus:ring-coffee-400 outline-hidden"
-            >
-              <option value="">Semua Rider</option>
-              {riders.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Rider Filter (Only for Admin/Owner) */}
+          {!isRider && (
+            <div>
+              <select
+                value={riderFilter}
+                onChange={(e) => setRiderFilter(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-espresso focus:ring-2 focus:ring-coffee-400 outline-hidden"
+              >
+                <option value="">Semua Rider</option>
+                {riders.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
-          {/* Channel Filter */}
-          <div>
-            <select
-              value={channelFilter}
-              onChange={(e) => setChannelFilter(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-espresso focus:ring-2 focus:ring-coffee-400 outline-hidden"
-            >
-              <option value="">Semua Saluran</option>
-              <option value="counter">Counter Toko</option>
-              <option value="rider">Keliling Rider</option>
-              <option value="manual">Manual Admin</option>
-            </select>
-          </div>
+          {/* Channel Filter (Only for Admin/Owner) */}
+          {!isRider && (
+            <div>
+              <select
+                value={channelFilter}
+                onChange={(e) => setChannelFilter(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-espresso focus:ring-2 focus:ring-coffee-400 outline-hidden"
+              >
+                <option value="">Semua Saluran</option>
+                <option value="counter">Counter Toko</option>
+                <option value="rider">Keliling Rider</option>
+                <option value="manual">Manual Admin</option>
+              </select>
+            </div>
+          )}
 
           {/* Payment Method */}
           <div>

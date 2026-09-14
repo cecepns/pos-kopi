@@ -139,11 +139,11 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Card 3: Rider Aktif */}
+          {/* Card 3: Rider Aktif / Status */}
           <div className="bg-white p-5 rounded-2xl border border-amber-100 shadow-xs hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                Rider Aktif
+                {isRider ? "Status Akun Rider" : "Rider Aktif"}
               </span>
               <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
                 <Bike className="w-5 h-5" />
@@ -151,10 +151,11 @@ export default function Dashboard() {
             </div>
             <div className="mt-3">
               <h3 className="text-2xl font-black text-espresso">
-                {stats?.active_riders || 0} <span className="text-sm font-semibold text-gray-500">Personel</span>
+                {isRider ? "Aktif" : `${stats?.active_riders || 0} `}
+                {!isRider && <span className="text-sm font-semibold text-gray-500">Personel</span>}
               </h3>
               <p className="text-xs text-gray-500 mt-1">
-                Armada keliling siap operasi
+                {isRider ? "Akun rider siap operasi keliling" : "Armada keliling siap operasi"}
               </p>
             </div>
           </div>
