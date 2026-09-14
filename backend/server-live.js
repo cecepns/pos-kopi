@@ -23,6 +23,8 @@ const app = express.Router();
 const PORT = process.env.PORT || 5001;
 
 // Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Upload directory setup
 const UPLOAD_DIR_NAME = process.env.UPLOAD_DIR || 'uploads-pos-coffee';
