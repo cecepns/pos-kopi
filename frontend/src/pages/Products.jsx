@@ -40,6 +40,8 @@ export default function Products() {
     sku: "",
     price: "",
     cost_price: "",
+    stock_ho: "100",
+    min_stock: "10",
     unit: "cup",
     status: "active",
   });
@@ -93,6 +95,8 @@ export default function Products() {
       sku: `PROD-${Math.floor(1000 + Math.random() * 9000)}`,
       price: "",
       cost_price: "",
+      stock_ho: "100",
+      min_stock: "10",
       unit: "cup",
       status: "active",
     });
@@ -109,6 +113,8 @@ export default function Products() {
       sku: p.sku,
       price: p.price,
       cost_price: p.cost_price || "",
+      stock_ho: p.stock_ho !== undefined ? String(p.stock_ho) : "100",
+      min_stock: p.min_stock !== undefined ? String(p.min_stock) : "10",
       unit: p.unit || "cup",
       status: p.status,
     });
@@ -142,6 +148,8 @@ export default function Products() {
       formPayload.append("cost_price", formData.cost_price || 0);
       formPayload.append("unit", formData.unit);
       formPayload.append("status", formData.status);
+      formPayload.append("stock_ho", formData.stock_ho !== "" ? formData.stock_ho : 100);
+      formPayload.append("min_stock", formData.min_stock !== "" ? formData.min_stock : 10);
       if (selectedFile) {
         formPayload.append("image", selectedFile);
       }
@@ -274,6 +282,7 @@ export default function Products() {
                   <th className="py-3.5 px-4 whitespace-nowrap">Kategori</th>
                   <th className="py-3.5 px-4 whitespace-nowrap">Harga Jual</th>
                   <th className="py-3.5 px-4 whitespace-nowrap">Modal (HPP)</th>
+                  <th className="py-3.5 px-4 whitespace-nowrap">Stok HO</th>
                   <th className="py-3.5 px-4 whitespace-nowrap">Satuan</th>
                   <th className="py-3.5 px-4 whitespace-nowrap">Status</th>
                   <th className="py-3.5 px-4 text-center whitespace-nowrap">Aksi</th>
@@ -301,6 +310,17 @@ export default function Products() {
                     </td>
                     <td className="py-3.5 px-4 text-gray-500 font-medium whitespace-nowrap">
                       {p.cost_price ? formatRupiah(p.cost_price) : "-"}
+                    </td>
+                    <td className="py-3.5 px-4 font-bold whitespace-nowrap">
+                      <span className={`px-2.5 py-1 rounded-lg text-xs ${
+                        (p.stock_ho ?? 100) <= 0 
+                          ? 'bg-rose-100 text-rose-700' 
+                          : (p.stock_ho ?? 100) <= (p.min_stock ?? 10) 
+                          ? 'bg-amber-100 text-amber-800' 
+                          : 'bg-emerald-50 text-emerald-800'
+                      }`}>
+                        {p.stock_ho ?? 100} {p.unit || "cup"}
+                      </span>
                     </td>
                     <td className="py-3.5 px-4 text-gray-600 font-semibold whitespace-nowrap">{p.unit || "cup"}</td>
                     <td className="py-3.5 px-4 whitespace-nowrap">
@@ -461,6 +481,38 @@ export default function Products() {
                 <option value="active">Tersedia (Aktif)</option>
                 <option value="inactive">Habis (Nonaktif)</option>
               </select>
+            </div>
+          </div>
+
+          {/* Stock HO & Minimum Alert Threshold */}
+          <div className="grid grid-cols-2 gap-3 bg-amber-50/50 p-3 rounded-xl border border-amber-200/80">
+            <div>
+              <label className="block text-[11px] font-bold text-coffee-800 uppercase tracking-wider mb-1">
+                Stok Gudang HO (Unit) *
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={formData.stock_ho}
+                onChange={(e) => setFormData({ ...formData, stock_ho: e.target.value })}
+                placeholder="100"
+                required
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-sm font-bold text-coffee-900 focus:ring-2 focus:ring-coffee-400"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-coffee-800 uppercase tracking-wider mb-1">
+                Batas Min Stok (Peringatan)
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={formData.min_stock}
+                onChange={(e) => setFormData({ ...formData, min_stock: e.target.value })}
+                placeholder="10"
+                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-sm font-semibold text-gray-700 focus:ring-2 focus:ring-coffee-400"
+              />
             </div>
           </div>
 

@@ -42,6 +42,7 @@ export const API_ENDPOINTS = {
 
   PRODUCTS: {
     LIST: "/products",
+    STOCK_HO: "/products/stock-ho",
     DETAIL: (id) => `/products/${id}`,
     CREATE: "/products",
     UPDATE: (id) => `/products/${id}`,
@@ -55,6 +56,18 @@ export const API_ENDPOINTS = {
     UPDATE: (id) => `/sales/${id}`,
     DELETE: (id) => `/sales/${id}`,
     DAILY_RECAP: "/sales/recap/daily",
+  },
+
+  ATTENDANCES: {
+    TODAY: "/attendances/today",
+    CLOCK_IN: "/attendances/clock-in",
+    CLOCK_OUT: "/attendances/clock-out",
+    LIST: "/attendances",
+  },
+
+  TRACKING: {
+    UPDATE_LOCATION: "/riders/location",
+    LIVE_LOCATIONS: "/riders/live-locations",
   },
 
   RIDER_PERFORMANCE: {

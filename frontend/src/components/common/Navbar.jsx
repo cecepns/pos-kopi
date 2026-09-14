@@ -1,12 +1,13 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Menu, LogOut, Coffee, ShoppingBag, PlusCircle, User } from "lucide-react";
+import { Menu, LogOut, Coffee, ShoppingBag, PlusCircle, User, MapPin } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
+import { useRiderLocationTracker } from "../../hooks/useRiderLocationTracker";
 import toast from "react-hot-toast";
 
 export default function Navbar({ toggleSidebar, isSidebarOpen }) {
   const { user, logout, isRider } = useAuth();
-  const navigate = useNavigate ? null : null; // using window location or router
+  const { isOnDuty, toggleDuty } = useRiderLocationTracker();
 
   const handleLogout = () => {
     logout();
@@ -53,6 +54,28 @@ export default function Navbar({ toggleSidebar, isSidebarOpen }) {
 
         {/* Right: Quick Actions & Profile */}
         <div className="flex items-center gap-2 sm:gap-4">
+          {/* Rider GPS Broadcast Toggle */}
+          {isRider && (
+            <button
+              type="button"
+              onClick={toggleDuty}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border ${
+                isOnDuty
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-300 ring-2 ring-emerald-400/20"
+                  : "bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200"
+              }`}
+              title={isOnDuty ? "GPS Keliling Aktif & Terpantau" : "Klik untuk Aktifkan GPS Keliling"}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isOnDuty ? "bg-emerald-500 animate-pulse" : "bg-gray-400"
+                }`}
+              />
+              <span className="hidden sm:inline">Mode Keliling:</span>
+              <span>{isOnDuty ? "ON" : "OFF"}</span>
+            </button>
+          )}
+
           {/* User profile info */}
           <div className="flex items-center gap-2.5 pl-2 border-l border-amber-100">
             <div className="w-9 h-9 rounded-full bg-amber-100/80 border border-amber-200 flex items-center justify-center text-coffee-800 font-bold text-sm shadow-inner">

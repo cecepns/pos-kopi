@@ -14,6 +14,9 @@ import {
   Target,
   Settings,
   X,
+  MapPin,
+  UserCheck,
+  Boxes,
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 
@@ -25,6 +28,7 @@ export default function Sidebar({ isOpen, onClose }) {
       title: "UTAMA",
       items: [
         { name: "Dashboard", path: "/", icon: LayoutDashboard, show: true },
+        { name: "Live Tracking GPS", path: "/live-tracking", icon: MapPin, show: !isRider, highlight: true },
       ],
     },
     {
@@ -32,8 +36,11 @@ export default function Sidebar({ isOpen, onClose }) {
       items: [
         { name: "Kasir (POS)", path: "/pos", icon: ShoppingCart, show: !isRider },
         { name: "Input Sales Rider", path: "/input-sales", icon: PlusCircle, show: true, highlight: true },
+        { name: "Presensi Absensi", path: "/attendance", icon: UserCheck, show: isRider },
+        { name: "Stok Gudang HO", path: "/ho-stock", icon: Boxes, show: isRider },
         { name: "Transaksi", path: "/transactions", icon: Receipt, show: true },
         { name: "Rekap Harian", path: "/daily-recap", icon: CalendarCheck, show: !isRider },
+        { name: "Rekap Presensi", path: "/attendances", icon: UserCheck, show: !isRider },
       ],
     },
     {

@@ -14,8 +14,10 @@ import {
   CreditCard,
   Banknote,
   QrCode,
+  Maximize2,
 } from "lucide-react";
 import Modal from "../common/Modal";
+import QrisModal from "../common/QrisModal";
 import { formatRupiah } from "../../utils/formatters";
 import { getImageUrl } from "../../utils/api";
 
@@ -36,6 +38,7 @@ export default function RiderSalesEntryModal({
   const [selectedItems, setSelectedItems] = useState([]);
   const [productSearch, setProductSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
+  const [isQrisModalOpen, setIsQrisModalOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -383,18 +386,33 @@ export default function RiderSalesEntryModal({
           </div>
         </div>
 
-        {/* QRIS Quick Visual if selected */}
-        {paymentMethod === "qris" && storeSettings?.qris_image && (
-          <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 flex items-center gap-3">
-            <img
-              src={getImageUrl(storeSettings.qris_image)}
-              alt="QRIS"
-              className="w-16 h-16 object-contain bg-white p-1 rounded-lg border border-amber-200 shrink-0"
-            />
-            <div className="text-[11px] text-gray-700">
-              <span className="font-bold text-coffee-800 block">QRIS Kedai Aktif</span>
-              <span>Pastikan transaksi via QRIS sudah berhasil masuk ke rekening/e-wallet kedai.</span>
+        {/* QRIS Quick Visual & Interactive Scanner if selected */}
+        {paymentMethod === "qris" && (
+          <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              {storeSettings?.qris_image ? (
+                <img
+                  src={getImageUrl(storeSettings.qris_image)}
+                  alt="QRIS"
+                  className="w-12 h-12 object-contain bg-white p-1 rounded-lg border border-amber-200 shrink-0"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700">
+                  <QrCode className="w-5 h-5" />
+                </div>
+              )}
+              <div className="text-[11px] text-gray-700">
+                <span className="font-bold text-coffee-800 block">QRIS Pembayaran Digital</span>
+                <span className="text-gray-500">Tampilkan barcode agar pembeli bisa langsung scan</span>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setIsQrisModalOpen(true)}
+              className="px-3 py-1.5 rounded-lg bg-coffee-700 hover:bg-coffee-800 text-cream-light text-[11px] font-bold flex items-center gap-1.5 shrink-0 shadow-xs transition-colors"
+            >
+              <Maximize2 className="w-3.5 h-3.5" /> Buka Layar QRIS
+            </button>
           </div>
         )}
 
@@ -427,6 +445,15 @@ export default function RiderSalesEntryModal({
           </button>
         </div>
       </form>
+
+      {/* Interactive Fullscreen QRIS Modal for Rider */}
+      <QrisModal
+        isOpen={isQrisModalOpen}
+        onClose={() => setIsQrisModalOpen(false)}
+        storeSettings={storeSettings}
+        amount={selectedItems.reduce((sum, item) => sum + item.subtotal, 0)}
+        title="QRIS Pembayaran Transaksi Rider"
+      />
     </Modal>
   );
 }

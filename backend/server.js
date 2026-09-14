@@ -93,13 +93,13 @@ const pool = mysql.createPool({
   timezone: '+07:00'
 });
 
-// Test connection on startup & auto migrate missing columns
+// Test connection on startup & auto migrate missing columns & tables
 (async () => {
   try {
     const conn = await pool.getConnection();
     console.log('✅ Connected to MySQL Database successfully!');
 
-    // Ensure store_settings has qris_image column
+    // 1. Ensure store_settings has qris_image column
     try {
       const [columns] = await conn.query("SHOW COLUMNS FROM `store_settings` LIKE 'qris_image'");
       if (columns.length === 0) {
@@ -108,6 +108,76 @@ const pool = mysql.createPool({
       }
     } catch (colErr) {
       console.warn('⚠️ Column check warning:', colErr.message);
+    }
+
+    // 2. Ensure products has stock_ho and min_stock columns
+    try {
+      const [stockCols] = await conn.query("SHOW COLUMNS FROM `products` LIKE 'stock_ho'");
+      if (stockCols.length === 0) {
+        await conn.query("ALTER TABLE `products` ADD COLUMN `stock_ho` INT NOT NULL DEFAULT 100 AFTER `cost_price`, ADD COLUMN `min_stock` INT NOT NULL DEFAULT 10 AFTER `stock_ho`");
+        console.log('✅ Added stock_ho & min_stock columns to products table');
+      }
+    } catch (colErr) {
+      console.warn('⚠️ Product stock columns check warning:', colErr.message);
+    }
+
+    // 3. Ensure riders has current_lat, current_lng, last_location_time, is_duty
+    try {
+      const [latCols] = await conn.query("SHOW COLUMNS FROM `riders` LIKE 'current_lat'");
+      if (latCols.length === 0) {
+        await conn.query("ALTER TABLE `riders` ADD COLUMN `current_lat` DECIMAL(10, 8) NULL AFTER `notes`, ADD COLUMN `current_lng` DECIMAL(11, 8) NULL AFTER `current_lat`, ADD COLUMN `last_location_time` TIMESTAMP NULL AFTER `current_lng`, ADD COLUMN `is_duty` TINYINT(1) NOT NULL DEFAULT 0 AFTER `last_location_time`");
+        console.log('✅ Added GPS & duty columns to riders table');
+      }
+    } catch (colErr) {
+      console.warn('⚠️ Rider GPS columns check warning:', colErr.message);
+    }
+
+    // 4. Ensure attendances table exists
+    try {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS \`attendances\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`rider_id\` INT NOT NULL,
+          \`user_id\` INT NOT NULL,
+          \`attendance_date\` DATE NOT NULL,
+          \`clock_in\` TIME NULL,
+          \`clock_in_lat\` DECIMAL(10, 8) NULL,
+          \`clock_in_lng\` DECIMAL(11, 8) NULL,
+          \`clock_in_photo\` VARCHAR(255) NULL,
+          \`clock_in_notes\` VARCHAR(255) NULL,
+          \`clock_out\` TIME NULL,
+          \`clock_out_lat\` DECIMAL(10, 8) NULL,
+          \`clock_out_lng\` DECIMAL(11, 8) NULL,
+          \`clock_out_photo\` VARCHAR(255) NULL,
+          \`clock_out_notes\` VARCHAR(255) NULL,
+          \`status\` ENUM('present', 'late', 'permission', 'sick') NOT NULL DEFAULT 'present',
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY \`uk_rider_date\` (\`rider_id\`, \`attendance_date\`),
+          INDEX \`idx_attendance_date\` (\`attendance_date\`),
+          INDEX \`idx_attendance_rider\` (\`rider_id\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+      console.log('✅ Checked/created attendances table');
+    } catch (attErr) {
+      console.warn('⚠️ attendances table check warning:', attErr.message);
+    }
+
+    // 5. Ensure rider_location_logs table exists
+    try {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS \`rider_location_logs\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`rider_id\` INT NOT NULL,
+          \`lat\` DECIMAL(10, 8) NOT NULL,
+          \`lng\` DECIMAL(11, 8) NOT NULL,
+          \`recorded_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX \`idx_rider_loc_time\` (\`rider_id\`, \`recorded_at\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+      console.log('✅ Checked/created rider_location_logs table');
+    } catch (locErr) {
+      console.warn('⚠️ rider_location_logs table check warning:', locErr.message);
     }
 
     conn.release();
@@ -1007,9 +1077,77 @@ app.get('/api/products/:id', async (req, res) => {
   }
 });
 
+app.get('/api/products/stock-ho', async (req, res) => {
+  try {
+    const { search = '', category_id = '', stock_status = '' } = req.query;
+
+    let whereClause = "WHERE p.status = 'active'";
+    const params = [];
+
+    if (search) {
+      whereClause += ' AND (p.name LIKE ? OR p.sku LIKE ? OR c.name LIKE ?)';
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    if (category_id && category_id !== 'all') {
+      whereClause += ' AND p.category_id = ?';
+      params.push(Number(category_id));
+    }
+
+    if (stock_status === 'out') {
+      whereClause += ' AND p.stock_ho <= 0';
+    } else if (stock_status === 'low') {
+      whereClause += ' AND p.stock_ho > 0 AND p.stock_ho <= p.min_stock';
+    } else if (stock_status === 'available') {
+      whereClause += ' AND p.stock_ho > p.min_stock';
+    }
+
+    const [rows] = await pool.query(`
+      SELECT 
+        p.id, p.name, p.sku, p.category_id, p.price, p.cost_price,
+        p.image, p.unit, p.status, p.stock_ho, p.min_stock,
+        COALESCE(c.name, 'Tanpa Kategori') AS category_name,
+        CASE 
+          WHEN p.stock_ho <= 0 THEN 'out_of_stock'
+          WHEN p.stock_ho <= p.min_stock THEN 'low_stock'
+          ELSE 'available'
+        END AS stock_status
+      FROM products p
+      LEFT JOIN categories c ON p.category_id = c.id
+      ${whereClause}
+      ORDER BY p.stock_ho ASC, p.name ASC
+    `, params);
+
+    // Summary counts for HO inventory
+    const [summaryResult] = await pool.query(`
+      SELECT 
+        COUNT(*) AS total_products,
+        SUM(CASE WHEN stock_ho > min_stock THEN 1 ELSE 0 END) AS available_count,
+        SUM(CASE WHEN stock_ho > 0 AND stock_ho <= min_stock THEN 1 ELSE 0 END) AS low_count,
+        SUM(CASE WHEN stock_ho <= 0 THEN 1 ELSE 0 END) AS out_count,
+        COALESCE(SUM(stock_ho), 0) AS total_ho_units
+      FROM products
+      WHERE status = 'active'
+    `);
+
+    return sendSuccess(res, {
+      items: rows,
+      summary: summaryResult[0] || {
+        total_products: 0,
+        available_count: 0,
+        low_count: 0,
+        out_count: 0,
+        total_ho_units: 0
+      }
+    });
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
 app.post('/api/products', upload.single('image'), async (req, res) => {
   try {
-    const { name, category_id, price, cost_price = 0, unit = 'cup', status = 'active', sku } = req.body;
+    const { name, category_id, price, cost_price = 0, unit = 'cup', status = 'active', sku, stock_ho = 100, min_stock = 10 } = req.body;
     if (!name || !category_id || !price) {
       return sendError(res, 'Nama, kategori, dan harga jual produk wajib diisi!', 400);
     }
@@ -1018,9 +1156,20 @@ app.post('/api/products', upload.single('image'), async (req, res) => {
     const newSku = sku || `PROD-${Date.now().toString().slice(-6)}`;
 
     const [result] = await pool.query(
-      `INSERT INTO products (category_id, name, sku, price, cost_price, image, unit, status) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [Number(category_id), name, newSku, Number(price), Number(cost_price) || 0, imagePath, unit || 'cup', status || 'active']
+      `INSERT INTO products (category_id, name, sku, price, cost_price, stock_ho, min_stock, image, unit, status) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        Number(category_id),
+        name,
+        newSku,
+        Number(price),
+        Number(cost_price) || 0,
+        Number(stock_ho) || 0,
+        Number(min_stock) || 0,
+        imagePath,
+        unit || 'cup',
+        status || 'active'
+      ]
     );
 
     const [created] = await pool.query(`
@@ -1042,7 +1191,7 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
     const [rows] = await pool.query('SELECT * FROM products WHERE id = ?', [id]);
     if (rows.length === 0) return sendError(res, 'Produk tidak ditemukan', 404);
 
-    const { name, category_id, price, cost_price, unit, status, sku } = req.body;
+    const { name, category_id, price, cost_price, unit, status, sku, stock_ho, min_stock } = req.body;
     let imagePath = rows[0].image;
     if (req.file) {
       imagePath = `/${UPLOAD_DIR_NAME}/${req.file.filename}`;
@@ -1055,6 +1204,8 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
          sku = COALESCE(?, sku),
          price = COALESCE(?, price),
          cost_price = COALESCE(?, cost_price),
+         stock_ho = COALESCE(?, stock_ho),
+         min_stock = COALESCE(?, min_stock),
          image = ?,
          unit = COALESCE(?, unit),
          status = COALESCE(?, status)
@@ -1065,6 +1216,8 @@ app.put('/api/products/:id', upload.single('image'), async (req, res) => {
         sku ?? null,
         price !== undefined ? Number(price) : null,
         cost_price !== undefined ? Number(cost_price) : null,
+        stock_ho !== undefined ? Number(stock_ho) : null,
+        min_stock !== undefined ? Number(min_stock) : null,
         imagePath,
         unit ?? null,
         status ?? null,
@@ -1353,6 +1506,13 @@ app.post('/api/sales', async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [saleId, snap.product_id, snap.product_name, snap.price, snap.cost_price, snap.qty, snap.subtotal]
       );
+
+      if (snap.product_id) {
+        await conn.query(
+          'UPDATE products SET stock_ho = GREATEST(0, stock_ho - ?) WHERE id = ?',
+          [snap.qty, snap.product_id]
+        );
+      }
     }
 
     await conn.commit();
@@ -1937,6 +2097,393 @@ app.put('/api/settings', upload.single('qris_image'), async (req, res) => {
       const [created] = await pool.query('SELECT * FROM store_settings WHERE id = ?', [result.insertId]);
       return sendSuccess(res, created[0], null, 'Pengaturan toko berhasil disimpan');
     }
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// ------------------------------------------
+// 10. ATTENDANCE (PRESENSI RIDER)
+// ------------------------------------------
+
+// Get today's attendance for current rider
+app.get('/api/attendances/today', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    const queryRiderId = req.query.rider_id ? Number(req.query.rider_id) : null;
+    const riderId = authUser?.rider_id || queryRiderId;
+
+    if (!riderId) {
+      return sendError(res, 'Rider ID tidak ditemukan atau akun bukan rider!', 400);
+    }
+
+    const [rows] = await pool.query(`
+      SELECT a.*, r.name AS rider_name, r.code AS rider_code, r.phone AS rider_phone
+      FROM attendances a
+      JOIN riders r ON a.rider_id = r.id
+      WHERE a.rider_id = ? AND a.attendance_date = CURDATE()
+      LIMIT 1
+    `, [riderId]);
+
+    const attendance = rows.length > 0 ? rows[0] : null;
+
+    return sendSuccess(res, {
+      attendance,
+      is_clocked_in: !!(attendance && attendance.clock_in),
+      is_clocked_out: !!(attendance && attendance.clock_out),
+      date: new Date().toISOString().split('T')[0]
+    });
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// Clock In (Absen Masuk)
+app.post('/api/attendances/clock-in', upload.single('photo'), async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    const { lat, lng, notes = '', status = 'present', rider_id } = req.body;
+    const effectiveRiderId = authUser?.rider_id || (rider_id ? Number(rider_id) : null);
+    const effectiveUserId = authUser?.id || 1;
+
+    if (!effectiveRiderId) {
+      return sendError(res, 'Rider ID wajib disertakan untuk melakukan absensi!', 400);
+    }
+
+    // Check if rider exists
+    const [riderRows] = await pool.query('SELECT * FROM riders WHERE id = ?', [effectiveRiderId]);
+    if (riderRows.length === 0) {
+      return sendError(res, 'Data rider tidak ditemukan!', 404);
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const [existing] = await pool.query(
+      'SELECT * FROM attendances WHERE rider_id = ? AND attendance_date = ?',
+      [effectiveRiderId, todayStr]
+    );
+
+    if (existing.length > 0 && existing[0].clock_in) {
+      return sendError(res, 'Anda sudah melakukan absen masuk hari ini!', 400);
+    }
+
+    const photoPath = req.file ? `/${UPLOAD_DIR_NAME}/${req.file.filename}` : null;
+    const parsedLat = lat !== undefined && lat !== '' ? Number(lat) : null;
+    const parsedLng = lng !== undefined && lng !== '' ? Number(lng) : null;
+
+    if (existing.length > 0) {
+      await pool.query(
+        `UPDATE attendances SET 
+           clock_in = CURTIME(),
+           clock_in_lat = ?,
+           clock_in_lng = ?,
+           clock_in_photo = COALESCE(?, clock_in_photo),
+           clock_in_notes = ?,
+           status = ?
+         WHERE id = ?`,
+        [parsedLat, parsedLng, photoPath, notes, status || 'present', existing[0].id]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO attendances 
+           (rider_id, user_id, attendance_date, clock_in, clock_in_lat, clock_in_lng, clock_in_photo, clock_in_notes, status)
+         VALUES (?, ?, ?, CURTIME(), ?, ?, ?, ?, ?)`,
+        [effectiveRiderId, effectiveUserId, todayStr, parsedLat, parsedLng, photoPath, notes, status || 'present']
+      );
+    }
+
+    // Set rider duty and latest position
+    await pool.query(
+      `UPDATE riders SET 
+         is_duty = 1, 
+         current_lat = COALESCE(?, current_lat), 
+         current_lng = COALESCE(?, current_lng), 
+         last_location_time = NOW() 
+       WHERE id = ?`,
+      [parsedLat, parsedLng, effectiveRiderId]
+    );
+
+    // Record to location logs if GPS coordinate present
+    if (parsedLat && parsedLng) {
+      await pool.query(
+        'INSERT INTO rider_location_logs (rider_id, lat, lng) VALUES (?, ?, ?)',
+        [effectiveRiderId, parsedLat, parsedLng]
+      );
+    }
+
+    const [saved] = await pool.query(
+      'SELECT * FROM attendances WHERE rider_id = ? AND attendance_date = ?',
+      [effectiveRiderId, todayStr]
+    );
+
+    return sendSuccess(res, saved[0], null, 'Berhasil melakukan absen masuk! Semangat bertugas.');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// Clock Out (Absen Pulang)
+app.post('/api/attendances/clock-out', upload.single('photo'), async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    const { lat, lng, notes = '', rider_id } = req.body;
+    const effectiveRiderId = authUser?.rider_id || (rider_id ? Number(rider_id) : null);
+
+    if (!effectiveRiderId) {
+      return sendError(res, 'Rider ID wajib disertakan untuk melakukan absensi pulang!', 400);
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const [existing] = await pool.query(
+      'SELECT * FROM attendances WHERE rider_id = ? AND attendance_date = ?',
+      [effectiveRiderId, todayStr]
+    );
+
+    if (existing.length === 0 || !existing[0].clock_in) {
+      return sendError(res, 'Anda belum melakukan absen masuk hari ini!', 400);
+    }
+
+    if (existing[0].clock_out) {
+      return sendError(res, 'Anda sudah melakukan absen pulang hari ini!', 400);
+    }
+
+    const photoPath = req.file ? `/${UPLOAD_DIR_NAME}/${req.file.filename}` : null;
+    const parsedLat = lat !== undefined && lat !== '' ? Number(lat) : null;
+    const parsedLng = lng !== undefined && lng !== '' ? Number(lng) : null;
+
+    await pool.query(
+      `UPDATE attendances SET 
+         clock_out = CURTIME(),
+         clock_out_lat = ?,
+         clock_out_lng = ?,
+         clock_out_photo = COALESCE(?, clock_out_photo),
+         clock_out_notes = ?
+       WHERE id = ?`,
+      [parsedLat, parsedLng, photoPath, notes, existing[0].id]
+    );
+
+    // End rider duty
+    await pool.query(
+      `UPDATE riders SET 
+         is_duty = 0,
+         current_lat = COALESCE(?, current_lat), 
+         current_lng = COALESCE(?, current_lng), 
+         last_location_time = NOW() 
+       WHERE id = ?`,
+      [parsedLat, parsedLng, effectiveRiderId]
+    );
+
+    // Record to location logs
+    if (parsedLat && parsedLng) {
+      await pool.query(
+        'INSERT INTO rider_location_logs (rider_id, lat, lng) VALUES (?, ?, ?)',
+        [effectiveRiderId, parsedLat, parsedLng]
+      );
+    }
+
+    const [saved] = await pool.query('SELECT * FROM attendances WHERE id = ?', [existing[0].id]);
+    return sendSuccess(res, saved[0], null, 'Berhasil melakukan absen pulang! Terima kasih atas dedikasi Anda.');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// List Attendances (for Admin, Owner, & Cashier reporting)
+app.get('/api/attendances', async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 10, 
+      search = '', 
+      date = '', 
+      start_date = '', 
+      end_date = '', 
+      rider_id = '', 
+      status = '' 
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 10));
+    const offset = (pageNum - 1) * limitNum;
+
+    let whereClause = 'WHERE 1=1';
+    const params = [];
+
+    if (search) {
+      whereClause += ' AND (r.name LIKE ? OR r.code LIKE ? OR u.name LIKE ?)';
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    if (rider_id) {
+      whereClause += ' AND a.rider_id = ?';
+      params.push(Number(rider_id));
+    }
+
+    if (status) {
+      whereClause += ' AND a.status = ?';
+      params.push(status);
+    }
+
+    if (date) {
+      whereClause += ' AND a.attendance_date = ?';
+      params.push(date);
+    } else {
+      if (start_date) {
+        whereClause += ' AND a.attendance_date >= ?';
+        params.push(start_date);
+      }
+      if (end_date) {
+        whereClause += ' AND a.attendance_date <= ?';
+        params.push(end_date);
+      }
+    }
+
+    const [countResult] = await pool.query(`
+      SELECT COUNT(*) AS total 
+      FROM attendances a
+      JOIN riders r ON a.rider_id = r.id
+      JOIN users u ON a.user_id = u.id
+      ${whereClause}
+    `, params);
+
+    const total = countResult[0]?.total || 0;
+    const totalPages = Math.ceil(total / limitNum);
+
+    const [rows] = await pool.query(`
+      SELECT 
+        a.*,
+        r.name AS rider_name,
+        r.code AS rider_code,
+        r.phone AS rider_phone,
+        u.name AS user_name
+      FROM attendances a
+      JOIN riders r ON a.rider_id = r.id
+      JOIN users u ON a.user_id = u.id
+      ${whereClause}
+      ORDER BY a.attendance_date DESC, a.clock_in DESC
+      LIMIT ? OFFSET ?
+    `, [...params, limitNum, offset]);
+
+    return sendSuccess(res, rows, {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages
+    });
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// ------------------------------------------
+// 11. GPS LIVE TRACKING (OWNER & KASIR)
+// ------------------------------------------
+
+// Update location from active rider
+app.post('/api/riders/location', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    const { lat, lng, is_duty, rider_id } = req.body;
+    const effectiveRiderId = authUser?.rider_id || (rider_id ? Number(rider_id) : null);
+
+    if (!effectiveRiderId) {
+      return sendError(res, 'Rider ID tidak ditemukan!', 400);
+    }
+
+    if (lat === undefined || lng === undefined) {
+      return sendError(res, 'Koordinat latitude dan longitude wajib dikirim!', 400);
+    }
+
+    const parsedLat = Number(lat);
+    const parsedLng = Number(lng);
+
+    await pool.query(
+      `UPDATE riders SET 
+         current_lat = ?, 
+         current_lng = ?, 
+         last_location_time = NOW(),
+         is_duty = COALESCE(?, is_duty)
+       WHERE id = ?`,
+      [parsedLat, parsedLng, is_duty !== undefined ? Number(is_duty) : null, effectiveRiderId]
+    );
+
+    // Save breadcrumb log
+    await pool.query(
+      'INSERT INTO rider_location_logs (rider_id, lat, lng) VALUES (?, ?, ?)',
+      [effectiveRiderId, parsedLat, parsedLng]
+    );
+
+    return sendSuccess(res, {
+      rider_id: effectiveRiderId,
+      lat: parsedLat,
+      lng: parsedLng,
+      updated_at: new Date().toISOString()
+    }, null, 'Lokasi berhasil diperbarui');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// Get Live Locations of all active riders for Owner & Cashier Map
+app.get('/api/riders/live-locations', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        r.id, 
+        r.code, 
+        r.name, 
+        r.phone, 
+        r.status, 
+        r.has_app_access,
+        r.current_lat, 
+        r.current_lng, 
+        r.last_location_time, 
+        r.is_duty,
+        COALESCE(sales_today.total_amount, 0) AS today_sales_amount,
+        COALESCE(sales_today.total_sales, 0) AS today_sales_count,
+        COALESCE(sales_today.total_cups, 0) AS today_cups_sold,
+        att_today.clock_in,
+        att_today.clock_out,
+        att_today.status AS attendance_status,
+        CASE 
+          WHEN r.last_location_time >= NOW() - INTERVAL 15 MINUTE AND r.is_duty = 1 THEN 'active'
+          WHEN r.is_duty = 1 THEN 'idle'
+          ELSE 'offline'
+        END AS tracking_status
+      FROM riders r
+      LEFT JOIN (
+        SELECT 
+          s.rider_id,
+          SUM(s.total_amount) AS total_amount,
+          COUNT(s.id) AS total_sales,
+          COALESCE((
+            SELECT SUM(si.qty) 
+            FROM sale_items si 
+            JOIN sales s2 ON si.sale_id = s2.id 
+            WHERE s2.rider_id = s.rider_id AND s2.sale_date = CURDATE() AND s2.status = 'completed'
+          ), 0) AS total_cups
+        FROM sales s
+        WHERE s.sale_date = CURDATE() AND s.status = 'completed' AND s.rider_id IS NOT NULL
+        GROUP BY s.rider_id
+      ) sales_today ON sales_today.rider_id = r.id
+      LEFT JOIN attendances att_today ON att_today.rider_id = r.id AND att_today.attendance_date = CURDATE()
+      WHERE r.status = 'active'
+      ORDER BY r.is_duty DESC, r.last_location_time DESC, r.name ASC
+    `);
+
+    // Summary stats
+    const totalActive = rows.filter((r) => r.tracking_status === 'active').length;
+    const totalOnDuty = rows.filter((r) => r.is_duty === 1).length;
+    const totalRiders = rows.length;
+
+    return sendSuccess(res, {
+      riders: rows,
+      summary: {
+        total_riders: totalRiders,
+        total_on_duty: totalOnDuty,
+        total_active_gps: totalActive,
+        server_time: new Date().toISOString()
+      }
+    });
   } catch (err) {
     return sendError(res, err.message, 500);
   }

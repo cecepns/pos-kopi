@@ -23,6 +23,10 @@ import RiderPerformance from "./pages/RiderPerformance";
 import RiderTargets from "./pages/RiderTargets";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
+import AttendanceRider from "./pages/AttendanceRider";
+import Attendances from "./pages/Attendances";
+import HoStock from "./pages/HoStock";
+import LiveTracking from "./pages/LiveTracking";
 
 // Protected Layout Component
 const AppLayout = ({ children }) => {
@@ -192,6 +196,38 @@ export default function App() {
               element={
                 <AppLayout>
                   <Settings />
+                </AppLayout>
+              }
+            />
+            <Route
+              path="/attendance"
+              element={
+                <AppLayout>
+                  <AttendanceRider />
+                </AppLayout>
+              }
+            />
+            <Route
+              path="/attendances"
+              element={
+                <AppLayout>
+                  <Attendances />
+                </AppLayout>
+              }
+            />
+            <Route
+              path="/ho-stock"
+              element={
+                <AppLayout>
+                  <HoStock />
+                </AppLayout>
+              }
+            />
+            <Route
+              path="/live-tracking"
+              element={
+                <AppLayout>
+                  <LiveTracking />
                 </AppLayout>
               }
             />

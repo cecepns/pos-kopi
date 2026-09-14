@@ -9,6 +9,7 @@ import {
   CheckCircle,
   FileText,
   Eye,
+  QrCode,
 } from "lucide-react";
 import { request } from "../utils/request";
 import { API_ENDPOINTS } from "../utils/endpoints";
@@ -18,6 +19,7 @@ import { useDebounce } from "../hooks/useDebounce";
 import { useAuth } from "../hooks/useAuth";
 import RiderSalesEntryModal from "../components/sales/RiderSalesEntryModal";
 import ReceiptModal from "../components/pos/ReceiptModal";
+import QrisModal from "../components/common/QrisModal";
 import Pagination from "../components/common/Pagination";
 import SearchInput from "../components/common/SearchInput";
 import Badge from "../components/common/Badge";
@@ -47,6 +49,7 @@ export default function InputSalesRider() {
   );
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isQuickQrisOpen, setIsQuickQrisOpen] = useState(false);
 
   // Fetch riders and products
   const fetchMetadata = async () => {
@@ -139,14 +142,24 @@ export default function InputSalesRider() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => handleOpenEntryForRider(null)}
-          className="px-4 py-2.5 bg-coffee-600 hover:bg-coffee-700 text-white font-bold text-sm rounded-xl shadow-md shadow-coffee-950/20 transition-all flex items-center justify-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          <span>{isRider ? "+ Catat Penjualan Baru" : "+ Input Sales Rider"}</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setIsQuickQrisOpen(true)}
+            className="px-3.5 py-2.5 bg-amber-100 hover:bg-amber-200 text-coffee-800 font-bold text-xs sm:text-sm rounded-xl border border-amber-300 shadow-xs transition-all flex items-center justify-center gap-1.5"
+          >
+            <QrCode className="w-4 h-4 text-coffee-700" />
+            <span>Tampilkan QRIS</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleOpenEntryForRider(null)}
+            className="px-4 py-2.5 bg-coffee-600 hover:bg-coffee-700 text-white font-bold text-sm rounded-xl shadow-md shadow-coffee-950/20 transition-all flex items-center justify-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>{isRider ? "+ Catat Penjualan Baru" : "+ Input Sales Rider"}</span>
+          </button>
+        </div>
       </div>
 
       {/* Quick Rider Cards (Fast Action per Rider) */}
@@ -366,6 +379,14 @@ export default function InputSalesRider() {
         onClose={() => setSelectedReceipt(null)}
         transaction={selectedReceipt}
         storeSettings={storeSettings}
+      />
+
+      {/* Quick QRIS Modal */}
+      <QrisModal
+        isOpen={isQuickQrisOpen}
+        onClose={() => setIsQuickQrisOpen(false)}
+        storeSettings={storeSettings}
+        title="QRIS Pembayaran Digital Kedai"
       />
     </div>
   );
