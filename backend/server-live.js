@@ -162,6 +162,78 @@ const pool = mysql.createPool({
             console.warn('⚠️ rider_location_logs table check warning:', locErr.message);
         }
 
+        // 6. Ensure rider_stocks table exists
+        try {
+            await conn.query(`
+                CREATE TABLE IF NOT EXISTS \`rider_stocks\` (
+                  \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+                  \`rider_id\` INT NOT NULL,
+                  \`product_id\` INT NOT NULL,
+                  \`stock_date\` DATE NOT NULL,
+                  \`allocated_qty\` INT NOT NULL DEFAULT 0,
+                  \`sold_qty\` INT NOT NULL DEFAULT 0,
+                  \`reject_qty\` INT NOT NULL DEFAULT 0,
+                  \`returned_qty\` INT NOT NULL DEFAULT 0,
+                  \`notes\` VARCHAR(255) NULL,
+                  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                  UNIQUE KEY \`uk_rider_product_date\` (\`rider_id\`, \`product_id\`, \`stock_date\`),
+                  INDEX \`idx_rider_stock_date\` (\`stock_date\`),
+                  INDEX \`idx_rider_stock_rider\` (\`rider_id\`),
+                  INDEX \`idx_rider_stock_product\` (\`product_id\`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+            console.log('✅ Checked/created rider_stocks table');
+        } catch (rsErr) {
+            console.warn('⚠️ rider_stocks table check warning:', rsErr.message);
+        }
+
+        // 7. Ensure rejected_stocks table exists
+        try {
+            await conn.query(`
+                CREATE TABLE IF NOT EXISTS \`rejected_stocks\` (
+                  \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+                  \`rider_id\` INT NULL,
+                  \`product_id\` INT NOT NULL,
+                  \`reject_date\` DATE NOT NULL,
+                  \`qty\` INT NOT NULL DEFAULT 1,
+                  \`reason\` ENUM('bocor', 'tumpah', 'basi', 'rusak', 'lainnya') NOT NULL DEFAULT 'bocor',
+                  \`notes\` TEXT NULL,
+                  \`created_by\` INT NOT NULL,
+                  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  INDEX \`idx_reject_date\` (\`reject_date\`),
+                  INDEX \`idx_reject_rider\` (\`rider_id\`),
+                  INDEX \`idx_reject_product\` (\`product_id\`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+            console.log('✅ Checked/created rejected_stocks table');
+        } catch (rjErr) {
+            console.warn('⚠️ rejected_stocks table check warning:', rjErr.message);
+        }
+
+        // 8. Ensure stock_movements table exists
+        try {
+            await conn.query(`
+                CREATE TABLE IF NOT EXISTS \`stock_movements\` (
+                  \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+                  \`product_id\` INT NOT NULL,
+                  \`rider_id\` INT NULL,
+                  \`movement_type\` ENUM('in_ho', 'transfer_to_rider', 'return_to_ho', 'reject') NOT NULL,
+                  \`qty\` INT NOT NULL,
+                  \`notes\` VARCHAR(255) NULL,
+                  \`created_by\` INT NOT NULL,
+                  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  INDEX \`idx_mov_product\` (\`product_id\`),
+                  INDEX \`idx_mov_rider\` (\`rider_id\`),
+                  INDEX \`idx_mov_type\` (\`movement_type\`),
+                  INDEX \`idx_mov_date\` (\`created_at\`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            `);
+            console.log('✅ Checked/created stock_movements table');
+        } catch (movErr) {
+            console.warn('⚠️ stock_movements table check warning:', movErr.message);
+        }
+
         conn.release();
     } catch (err) {
         console.error(`❌ MySQL Connection Failed: ${err.message}`);
@@ -1179,6 +1251,497 @@ app.get('/api/products/stock-ho', async (req, res) => {
     }
 });
 
+// ==========================================
+// Stock Management: HO, Rider Allocation, Rejects, Return
+// ==========================================
+
+// 1. Restock HO (Tambah stok keseluruhan gudang pusat)
+app.post('/api/stocks/restock-ho', async (req, res) => {
+    const conn = await pool.getConnection();
+    try {
+        const authUser = await getAuthUser(req);
+        const { product_id, qty, notes } = req.body;
+        const addQty = Number(qty);
+
+        if (!product_id || isNaN(addQty) || addQty <= 0) {
+            return sendError(res, 'Pilih produk dan masukkan jumlah penambahan stok yang valid (> 0)', 400);
+        }
+
+        await conn.beginTransaction();
+
+        const [prodRows] = await conn.query('SELECT * FROM products WHERE id = ?', [product_id]);
+        if (prodRows.length === 0) {
+            await conn.rollback();
+            return sendError(res, 'Produk tidak ditemukan', 404);
+        }
+
+        await conn.query('UPDATE products SET stock_ho = stock_ho + ? WHERE id = ?', [addQty, product_id]);
+
+        await conn.query(
+            `INSERT INTO stock_movements (product_id, movement_type, qty, notes, created_by)
+             VALUES (?, 'in_ho', ?, ?, ?)`,
+            [product_id, addQty, notes || 'Restock gudang HO', authUser?.id || 1]
+        );
+
+        await conn.commit();
+
+        const [updatedProd] = await pool.query('SELECT * FROM products WHERE id = ?', [product_id]);
+        return sendSuccess(res, updatedProd[0], null, `Berhasil menambah ${addQty} cup stok HO untuk ${updatedProd[0].name}`);
+    } catch (err) {
+        await conn.rollback();
+        return sendError(res, err.message, 500);
+    } finally {
+        conn.release();
+    }
+});
+
+// 2. Allocate Stock to Rider (Geser stok HO menjadi stok awal dagang rider)
+app.post('/api/stocks/allocate-rider', async (req, res) => {
+    const conn = await pool.getConnection();
+    try {
+        const authUser = await getAuthUser(req);
+        const { rider_id, stock_date, items, notes } = req.body;
+
+        const parsedRiderId = Number(rider_id);
+        const dateStr = stock_date || new Date().toISOString().split('T')[0];
+
+        if (!parsedRiderId || !Array.isArray(items) || items.length === 0) {
+            return sendError(res, 'Pilih rider dan minimal satu produk untuk dialokasikan', 400);
+        }
+
+        await conn.beginTransaction();
+
+        const [riderRows] = await conn.query('SELECT * FROM riders WHERE id = ?', [parsedRiderId]);
+        if (riderRows.length === 0) {
+            await conn.rollback();
+            return sendError(res, 'Data rider tidak ditemukan', 404);
+        }
+
+        const allocatedResults = [];
+
+        for (const item of items) {
+            const prodId = Number(item.product_id);
+            const qty = Number(item.qty);
+
+            if (!prodId || isNaN(qty) || qty <= 0) {
+                continue;
+            }
+
+            const [prodRows] = await conn.query('SELECT id, name, stock_ho FROM products WHERE id = ? FOR UPDATE', [prodId]);
+            if (prodRows.length === 0) {
+                await conn.rollback();
+                return sendError(res, `Produk ID ${prodId} tidak ditemukan`, 404);
+            }
+
+            const prod = prodRows[0];
+            if (prod.stock_ho < qty) {
+                await conn.rollback();
+                return sendError(res, `Stok Gudang HO untuk "${prod.name}" tidak mencukupi (Tersedia: ${prod.stock_ho}, Diminta: ${qty})`, 400);
+            }
+
+            await conn.query('UPDATE products SET stock_ho = stock_ho - ? WHERE id = ?', [qty, prodId]);
+
+            await conn.query(`
+                INSERT INTO rider_stocks (rider_id, product_id, stock_date, allocated_qty, notes)
+                VALUES (?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE 
+                  allocated_qty = allocated_qty + VALUES(allocated_qty),
+                  notes = COALESCE(VALUES(notes), notes)
+            `, [parsedRiderId, prodId, dateStr, qty, notes || null]);
+
+            await conn.query(`
+                INSERT INTO stock_movements (product_id, rider_id, movement_type, qty, notes, created_by)
+                VALUES (?, ?, 'transfer_to_rider', ?, ?, ?)
+            `, [prodId, parsedRiderId, qty, notes || `Alokasi stok dagang ke ${riderRows[0].name}`, authUser?.id || 1]);
+
+            allocatedResults.push({
+                product_id: prodId,
+                product_name: prod.name,
+                qty
+            });
+        }
+
+        await conn.commit();
+
+        return sendSuccess(res, {
+            rider_id: parsedRiderId,
+            rider_name: riderRows[0].name,
+            stock_date: dateStr,
+            allocated_items: allocatedResults
+        }, null, `Berhasil menggeser stok awal dagang untuk ${riderRows[0].name}`);
+    } catch (err) {
+        await conn.rollback();
+        return sendError(res, err.message, 500);
+    } finally {
+        conn.release();
+    }
+});
+
+// 3. Get Rider Stocks (Daftar stok dagang rider per tanggal & produk)
+app.get('/api/stocks/rider-stocks', async (req, res) => {
+    try {
+        const {
+            page = 1,
+            limit = 10,
+            search = '',
+            rider_id = '',
+            date = '',
+            sort = 'rs.stock_date',
+            order = 'DESC'
+        } = req.query;
+
+        const pageNum = Math.max(1, parseInt(page, 10));
+        const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10)));
+        const offset = (pageNum - 1) * limitNum;
+
+        let whereClause = 'WHERE 1=1';
+        const params = [];
+
+        if (rider_id) {
+            whereClause += ' AND rs.rider_id = ?';
+            params.push(Number(rider_id));
+        }
+
+        if (date) {
+            whereClause += ' AND rs.stock_date = ?';
+            params.push(date);
+        }
+
+        if (search) {
+            whereClause += ' AND (r.name LIKE ? OR r.code LIKE ? OR p.name LIKE ?)';
+            params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+        }
+
+        const [countResult] = await pool.query(`
+          SELECT COUNT(*) AS total
+          FROM rider_stocks rs
+          JOIN riders r ON rs.rider_id = r.id
+          JOIN products p ON rs.product_id = p.id
+          ${whereClause}
+        `, params);
+
+        const total = countResult[0].total;
+        const totalPages = Math.ceil(total / limitNum) || 1;
+
+        const sortField = ['stock_date', 'rider_name', 'product_name'].includes(sort) ? sort : 'rs.stock_date';
+        const sortOrder = String(order).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+        const [rows] = await pool.query(`
+          SELECT 
+            rs.id,
+            rs.rider_id,
+            r.name AS rider_name,
+            r.code AS rider_code,
+            rs.product_id,
+            p.name AS product_name,
+            p.image AS product_image,
+            p.price,
+            rs.stock_date,
+            rs.allocated_qty,
+            rs.sold_qty,
+            rs.reject_qty,
+            rs.returned_qty,
+            GREATEST(0, rs.allocated_qty - rs.sold_qty - rs.reject_qty - rs.returned_qty) AS remaining_qty,
+            rs.notes,
+            rs.created_at,
+            rs.updated_at
+          FROM rider_stocks rs
+          JOIN riders r ON rs.rider_id = r.id
+          JOIN products p ON rs.product_id = p.id
+          ${whereClause}
+          ORDER BY ${sortField} ${sortOrder}, rs.id DESC
+          LIMIT ? OFFSET ?
+        `, [...params, limitNum, offset]);
+
+        const [summaryRows] = await pool.query(`
+          SELECT 
+            COALESCE(SUM(rs.allocated_qty), 0) AS total_allocated,
+            COALESCE(SUM(rs.sold_qty), 0) AS total_sold,
+            COALESCE(SUM(rs.reject_qty), 0) AS total_reject,
+            COALESCE(SUM(rs.returned_qty), 0) AS total_returned,
+            COALESCE(SUM(GREATEST(0, rs.allocated_qty - rs.sold_qty - rs.reject_qty - rs.returned_qty)), 0) AS total_remaining
+          FROM rider_stocks rs
+          JOIN riders r ON rs.rider_id = r.id
+          JOIN products p ON rs.product_id = p.id
+          ${whereClause}
+        `, params);
+
+        return sendSuccess(res, {
+            items: rows,
+            summary: summaryRows[0] || {}
+        }, {
+            page: pageNum,
+            limit: limitNum,
+            total,
+            totalPages
+        });
+    } catch (err) {
+        return sendError(res, err.message, 500);
+    }
+});
+
+// 4. Record Reject Stock (Geser stok jadi barang reject)
+app.post('/api/stocks/reject', async (req, res) => {
+    const conn = await pool.getConnection();
+    try {
+        const authUser = await getAuthUser(req);
+        const { source = 'rider', rider_id, product_id, reject_date, qty, reason = 'bocor', notes } = req.body;
+
+        const prodId = Number(product_id);
+        const rejectQty = Number(qty);
+        const dateStr = reject_date || new Date().toISOString().split('T')[0];
+
+        if (!prodId || isNaN(rejectQty) || rejectQty <= 0) {
+            return sendError(res, 'Pilih produk dan masukkan jumlah reject yang valid (> 0)', 400);
+        }
+
+        const validReasons = ['bocor', 'tumpah', 'basi', 'rusak', 'lainnya'];
+        const parsedReason = validReasons.includes(reason) ? reason : 'bocor';
+
+        await conn.beginTransaction();
+
+        const [prodRows] = await conn.query('SELECT id, name, stock_ho FROM products WHERE id = ? FOR UPDATE', [prodId]);
+        if (prodRows.length === 0) {
+            await conn.rollback();
+            return sendError(res, 'Produk tidak ditemukan', 404);
+        }
+        const prod = prodRows[0];
+
+        let effectiveRiderId = null;
+
+        if (source === 'rider') {
+            effectiveRiderId = Number(rider_id);
+            if (!effectiveRiderId) {
+                await conn.rollback();
+                return sendError(res, 'Pilih rider pemilik stok yang di-reject', 400);
+            }
+
+            const [rsRows] = await conn.query(`
+                SELECT *, GREATEST(0, allocated_qty - sold_qty - reject_qty - returned_qty) AS remaining_qty
+                FROM rider_stocks
+                WHERE rider_id = ? AND product_id = ? AND stock_date = ?
+                FOR UPDATE
+            `, [effectiveRiderId, prodId, dateStr]);
+
+            if (rsRows.length === 0 || rsRows[0].remaining_qty < rejectQty) {
+                const available = rsRows.length > 0 ? rsRows[0].remaining_qty : 0;
+                await conn.rollback();
+                return sendError(res, `Sisa stok dagang rider untuk "${prod.name}" tidak mencukupi untuk di-reject (Sisa stok: ${available}, Reject: ${rejectQty})`, 400);
+            }
+
+            await conn.query(`
+                UPDATE rider_stocks 
+                SET reject_qty = reject_qty + ?
+                WHERE rider_id = ? AND product_id = ? AND stock_date = ?
+            `, [rejectQty, effectiveRiderId, prodId, dateStr]);
+
+            await conn.query(`
+                INSERT INTO stock_movements (product_id, rider_id, movement_type, qty, notes, created_by)
+                VALUES (?, ?, 'reject', ?, ?, ?)
+            `, [prodId, effectiveRiderId, rejectQty, notes || `Barang reject dari rider (${parsedReason})`, authUser?.id || 1]);
+        } else {
+            if (prod.stock_ho < rejectQty) {
+                await conn.rollback();
+                return sendError(res, `Stok Gudang HO untuk "${prod.name}" tidak mencukupi untuk di-reject (Stok HO: ${prod.stock_ho}, Reject: ${rejectQty})`, 400);
+            }
+
+            await conn.query('UPDATE products SET stock_ho = stock_ho - ? WHERE id = ?', [rejectQty, prodId]);
+
+            await conn.query(`
+                INSERT INTO stock_movements (product_id, movement_type, qty, notes, created_by)
+                VALUES (?, 'reject', ?, ?, ?)
+            `, [prodId, rejectQty, notes || `Barang reject dari gudang HO (${parsedReason})`, authUser?.id || 1]);
+        }
+
+        const [rejResult] = await conn.query(`
+            INSERT INTO rejected_stocks (rider_id, product_id, reject_date, qty, reason, notes, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [effectiveRiderId, prodId, dateStr, rejectQty, parsedReason, notes || null, authUser?.id || 1]);
+
+        await conn.commit();
+
+        return sendSuccess(res, {
+            id: rejResult.insertId,
+            source,
+            rider_id: effectiveRiderId,
+            product_id: prodId,
+            product_name: prod.name,
+            qty: rejectQty,
+            reason: parsedReason,
+            reject_date: dateStr
+        }, null, `Berhasil mencatat ${rejectQty} cup ${prod.name} sebagai barang reject (${parsedReason})`);
+    } catch (err) {
+        await conn.rollback();
+        return sendError(res, err.message, 500);
+    } finally {
+        conn.release();
+    }
+});
+
+// 5. Get Rejects List (Histori barang reject)
+app.get('/api/stocks/rejects', async (req, res) => {
+    try {
+        const {
+            page = 1,
+            limit = 10,
+            search = '',
+            rider_id = '',
+            reason = '',
+            date = '',
+            source = ''
+        } = req.query;
+
+        const pageNum = Math.max(1, parseInt(page, 10));
+        const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10)));
+        const offset = (pageNum - 1) * limitNum;
+
+        let whereClause = 'WHERE 1=1';
+        const params = [];
+
+        if (rider_id) {
+            whereClause += ' AND rj.rider_id = ?';
+            params.push(Number(rider_id));
+        }
+
+        if (source === 'ho') {
+            whereClause += ' AND rj.rider_id IS NULL';
+        } else if (source === 'rider') {
+            whereClause += ' AND rj.rider_id IS NOT NULL';
+        }
+
+        if (reason) {
+            whereClause += ' AND rj.reason = ?';
+            params.push(reason);
+        }
+
+        if (date) {
+            whereClause += ' AND rj.reject_date = ?';
+            params.push(date);
+        }
+
+        if (search) {
+            whereClause += ' AND (p.name LIKE ? OR COALESCE(r.name, "Gudang HO") LIKE ? OR rj.notes LIKE ?)';
+            params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+        }
+
+        const [countResult] = await pool.query(`
+          SELECT COUNT(*) AS total
+          FROM rejected_stocks rj
+          LEFT JOIN riders r ON rj.rider_id = r.id
+          JOIN products p ON rj.product_id = p.id
+          ${whereClause}
+        `, params);
+
+        const total = countResult[0].total;
+        const totalPages = Math.ceil(total / limitNum) || 1;
+
+        const [rows] = await pool.query(`
+          SELECT 
+            rj.id,
+            rj.rider_id,
+            COALESCE(r.name, 'Gudang HO (Pusat)') AS source_name,
+            r.code AS rider_code,
+            rj.product_id,
+            p.name AS product_name,
+            p.image AS product_image,
+            rj.reject_date,
+            rj.qty,
+            rj.reason,
+            rj.notes,
+            rj.created_at,
+            u.name AS recorder_name
+          FROM rejected_stocks rj
+          LEFT JOIN riders r ON rj.rider_id = r.id
+          JOIN products p ON rj.product_id = p.id
+          JOIN users u ON rj.created_by = u.id
+          ${whereClause}
+          ORDER BY rj.reject_date DESC, rj.id DESC
+          LIMIT ? OFFSET ?
+        `, [...params, limitNum, offset]);
+
+        const [sumResult] = await pool.query(`
+          SELECT COALESCE(SUM(rj.qty), 0) AS total_reject_units
+          FROM rejected_stocks rj
+          LEFT JOIN riders r ON rj.rider_id = r.id
+          JOIN products p ON rj.product_id = p.id
+          ${whereClause}
+        `, params);
+
+        return sendSuccess(res, {
+            items: rows,
+            total_reject_units: sumResult[0].total_reject_units
+        }, {
+            page: pageNum,
+            limit: limitNum,
+            total,
+            totalPages
+        });
+    } catch (err) {
+        return sendError(res, err.message, 500);
+    }
+});
+
+// 6. Return Stock to HO (Kembalikan sisa stok rider ke gudang HO)
+app.post('/api/stocks/return-ho', async (req, res) => {
+    const conn = await pool.getConnection();
+    try {
+        const authUser = await getAuthUser(req);
+        const { rider_id, product_id, stock_date, qty, notes } = req.body;
+
+        const parsedRiderId = Number(rider_id);
+        const prodId = Number(product_id);
+        const returnQty = Number(qty);
+        const dateStr = stock_date || new Date().toISOString().split('T')[0];
+
+        if (!parsedRiderId || !prodId || isNaN(returnQty) || returnQty <= 0) {
+            return sendError(res, 'Pilih rider, produk, dan masukkan jumlah return yang valid (> 0)', 400);
+        }
+
+        await conn.beginTransaction();
+
+        const [rsRows] = await conn.query(`
+            SELECT *, GREATEST(0, allocated_qty - sold_qty - reject_qty - returned_qty) AS remaining_qty
+            FROM rider_stocks
+            WHERE rider_id = ? AND product_id = ? AND stock_date = ?
+            FOR UPDATE
+        `, [parsedRiderId, prodId, dateStr]);
+
+        if (rsRows.length === 0 || rsRows[0].remaining_qty < returnQty) {
+            const available = rsRows.length > 0 ? rsRows[0].remaining_qty : 0;
+            await conn.rollback();
+            return sendError(res, `Sisa stok dagang rider tidak mencukupi untuk dikembalikan ke HO (Sisa fisik: ${available}, Return: ${returnQty})`, 400);
+        }
+
+        await conn.query(`
+            UPDATE rider_stocks
+            SET returned_qty = returned_qty + ?
+            WHERE rider_id = ? AND product_id = ? AND stock_date = ?
+        `, [returnQty, parsedRiderId, prodId, dateStr]);
+
+        await conn.query('UPDATE products SET stock_ho = stock_ho + ? WHERE id = ?', [returnQty, prodId]);
+
+        await conn.query(`
+            INSERT INTO stock_movements (product_id, rider_id, movement_type, qty, notes, created_by)
+            VALUES (?, ?, 'return_to_ho', ?, ?, ?)
+        `, [prodId, parsedRiderId, returnQty, notes || 'Pengembalian sisa stok rider ke gudang HO', authUser?.id || 1]);
+
+        await conn.commit();
+
+        const [prodInfo] = await pool.query('SELECT name FROM products WHERE id = ?', [prodId]);
+        return sendSuccess(res, {
+            rider_id: parsedRiderId,
+            product_id: prodId,
+            returned_qty: returnQty,
+            stock_date: dateStr
+        }, null, `Berhasil mengembalikan ${returnQty} cup ${prodInfo[0]?.name || ''} ke gudang HO`);
+    } catch (err) {
+        await conn.rollback();
+        return sendError(res, err.message, 500);
+    } finally {
+        conn.release();
+    }
+});
+
 app.get('/api/products/:id', async (req, res) => {
     try {
         const id = Number(req.params.id);
@@ -1562,10 +2125,20 @@ app.post('/api/sales', async (req, res) => {
             );
 
             if (snap.product_id) {
-                await conn.query(
-                    'UPDATE products SET stock_ho = GREATEST(0, stock_ho - ?) WHERE id = ?',
-                    [snap.qty, snap.product_id]
-                );
+                if (!effectiveRiderId) {
+                    // Counter direct sale: deduct directly from HO
+                    await conn.query(
+                        'UPDATE products SET stock_ho = GREATEST(0, stock_ho - ?) WHERE id = ?',
+                        [snap.qty, snap.product_id]
+                    );
+                } else {
+                    // Rider sale: sync sold_qty into rider_stocks for today!
+                    await conn.query(`
+                        INSERT INTO rider_stocks (rider_id, product_id, stock_date, allocated_qty, sold_qty, reject_qty, returned_qty)
+                        VALUES (?, ?, ?, 0, ?, 0, 0)
+                        ON DUPLICATE KEY UPDATE sold_qty = sold_qty + VALUES(sold_qty)
+                    `, [effectiveRiderId, snap.product_id, actualSaleDate, snap.qty]);
+                }
             }
         }
 

@@ -35,3 +35,31 @@ export const formatDateTimeIndo = (dateTimeStr) => {
     minute: "2-digit",
   }).format(date);
 };
+
+export const getProductInitials = (name) => {
+  if (!name || typeof name !== "string") return "CP";
+  const clean = name.trim().replace(/[^a-zA-Z0-9\s]/g, "");
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "CP";
+  if (words.length === 1) {
+    return words[0].slice(0, 2).toUpperCase();
+  }
+  return (words[0][0] + words[1][0]).toUpperCase();
+};
+
+export const getProductColorClass = (name) => {
+  const palettes = [
+    "bg-gradient-to-br from-amber-700 to-amber-950 text-amber-100",
+    "bg-gradient-to-br from-[#6f4e37] to-[#362013] text-[#fbf8f4]",
+    "bg-gradient-to-br from-stone-700 to-stone-950 text-stone-100",
+    "bg-gradient-to-br from-amber-800 to-stone-900 text-amber-50",
+    "bg-gradient-to-br from-orange-800 to-amber-950 text-orange-100",
+    "bg-gradient-to-br from-yellow-800 to-stone-950 text-yellow-100",
+  ];
+  if (!name) return palettes[0];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return palettes[Math.abs(hash) % palettes.length];
+};

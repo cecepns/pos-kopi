@@ -26,6 +26,7 @@ import ConfirmDialog from "../components/common/ConfirmDialog";
 import ReceiptModal from "../components/pos/ReceiptModal";
 import Badge from "../components/common/Badge";
 import LoadingSkeleton from "../components/common/LoadingSkeleton";
+import { exportToExcel } from "../utils/excel";
 import toast from "react-hot-toast";
 
 export default function Transactions() {
@@ -141,35 +142,43 @@ export default function Transactions() {
     }
   };
 
-  const handleExportCSV = () => {
+  const handleExportExcel = () => {
     if (sales.length === 0) {
       toast.error("Tidak ada data untuk diekspor");
       return;
     }
 
-    const headers = ["No. Nota", "Tanggal", "Saluran", "Rider", "Total Cup", "Total Omzet", "Metode Bayar", "Input Oleh", "Status", "Catatan"];
-    const rows = sales.map((s) => [
-      `"${s.sale_number}"`,
-      `"${s.sale_date}"`,
-      `"${s.sales_channel}"`,
-      `"${s.rider_name || 'Counter'}"`,
-      s.total_items,
-      s.total_amount,
-      `"${s.payment_method}"`,
-      `"${s.creator_name}"`,
-      `"${s.status}"`,
-      `"${(s.notes || '').replace(/"/g, '""')}"`
-    ]);
+    try {
+      const dataForExcel = sales.map((s, index) => ({
+        "No": index + 1,
+        "No. Nota": s.sale_number,
+        "Tanggal": s.sale_date,
+        "Saluran":
+          s.sales_channel === "counter"
+            ? "Counter Toko"
+            : s.sales_channel === "rider"
+            ? "Rider Keliling"
+            : "Manual",
+        "Nama Rider": s.rider_name || "Counter Toko",
+        "Total Cup": Number(s.total_items) || 0,
+        "Total Omzet (Rp)": Number(s.total_amount) || 0,
+        "Metode Bayar": (s.payment_method || "cash").toUpperCase(),
+        "Diinput Oleh": s.creator_name || "-",
+        "Status": s.status === "completed" ? "Selesai" : s.status,
+        "Catatan": s.notes || "-",
+      }));
 
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `laporan_transaksi_${new Date().toISOString().split("T")[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success("File CSV berhasil diunduh");
+      exportToExcel({
+        data: dataForExcel,
+        filename: `Laporan_Transaksi_${new Date().toISOString().split("T")[0]}`,
+        sheetName: "Transaksi",
+        columnWidths: [6, 20, 14, 16, 20, 12, 18, 14, 16, 12, 25],
+      });
+
+      toast.success("File Excel (.xlsx) berhasil diunduh!");
+    } catch (err) {
+      toast.error(err.message || "Gagal mengekspor data ke Excel");
+    }
   };
 
   return (
@@ -196,11 +205,11 @@ export default function Transactions() {
 
         <button
           type="button"
-          onClick={handleExportCSV}
+          onClick={handleExportExcel}
           className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-2 transition-colors self-start sm:self-auto"
         >
           <Download className="w-4 h-4" />
-          <span>Ekspor CSV</span>
+          <span>Ekspor Excel (.xlsx)</span>
         </button>
       </div>
 

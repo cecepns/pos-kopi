@@ -93,4 +93,13 @@ export const API_ENDPOINTS = {
     GET: "/settings",
     UPDATE: "/settings",
   },
+
+  STOCKS: {
+    RESTOCK_HO: "/stocks/restock-ho",
+    ALLOCATE_RIDER: "/stocks/allocate-rider",
+    RIDER_STOCKS: "/stocks/rider-stocks",
+    REJECT: "/stocks/reject",
+    REJECTS_LIST: "/stocks/rejects",
+    RETURN_HO: "/stocks/return-ho",
+  },
 };

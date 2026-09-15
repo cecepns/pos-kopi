@@ -228,3 +228,62 @@ INSERT INTO `sale_items` (`sale_id`, `product_id`, `product_name`, `price`, `cos
 (4, 1, 'Kopi Susu Gula Aren', 18000.00, 8000.00, 10, 180000.00),
 (4, 6, 'Signature Matcha Latte', 22000.00, 9000.00, 3, 66000.00),
 (4, 8, 'Lemon Tea Segar', 14000.00, 4000.00, 3, 42000.00);
+
+-- 9. Table: rider_stocks
+CREATE TABLE IF NOT EXISTS `rider_stocks` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `rider_id` INT NOT NULL,
+  `product_id` INT NOT NULL,
+  `stock_date` DATE NOT NULL,
+  `allocated_qty` INT NOT NULL DEFAULT 0,
+  `sold_qty` INT NOT NULL DEFAULT 0,
+  `reject_qty` INT NOT NULL DEFAULT 0,
+  `returned_qty` INT NOT NULL DEFAULT 0,
+  `notes` VARCHAR(255) NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uk_rider_product_date` (`rider_id`, `product_id`, `stock_date`),
+  INDEX `idx_rider_stock_date` (`stock_date`),
+  INDEX `idx_rider_stock_rider` (`rider_id`),
+  INDEX `idx_rider_stock_product` (`product_id`),
+  CONSTRAINT `fk_rider_stocks_rider` FOREIGN KEY (`rider_id`) REFERENCES `riders` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rider_stocks_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 10. Table: rejected_stocks
+CREATE TABLE IF NOT EXISTS `rejected_stocks` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `rider_id` INT NULL,
+  `product_id` INT NOT NULL,
+  `reject_date` DATE NOT NULL,
+  `qty` INT NOT NULL DEFAULT 1,
+  `reason` ENUM('bocor', 'tumpah', 'basi', 'rusak', 'lainnya') NOT NULL DEFAULT 'bocor',
+  `notes` TEXT NULL,
+  `created_by` INT NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_reject_date` (`reject_date`),
+  INDEX `idx_reject_rider` (`rider_id`),
+  INDEX `idx_reject_product` (`product_id`),
+  CONSTRAINT `fk_rejected_stocks_rider` FOREIGN KEY (`rider_id`) REFERENCES `riders` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_rejected_stocks_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rejected_stocks_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 11. Table: stock_movements
+CREATE TABLE IF NOT EXISTS `stock_movements` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `product_id` INT NOT NULL,
+  `rider_id` INT NULL,
+  `movement_type` ENUM('in_ho', 'transfer_to_rider', 'return_to_ho', 'reject') NOT NULL,
+  `qty` INT NOT NULL,
+  `notes` VARCHAR(255) NULL,
+  `created_by` INT NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_mov_product` (`product_id`),
+  INDEX `idx_mov_rider` (`rider_id`),
+  INDEX `idx_mov_type` (`movement_type`),
+  INDEX `idx_mov_date` (`created_at`),
+  CONSTRAINT `fk_mov_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mov_rider` FOREIGN KEY (`rider_id`) REFERENCES `riders` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_mov_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

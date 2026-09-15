@@ -6,6 +6,7 @@ import { formatRupiah, formatDateIndo } from "../utils/formatters";
 import RiderSalesEntryModal from "../components/sales/RiderSalesEntryModal";
 import Badge from "../components/common/Badge";
 import LoadingSkeleton from "../components/common/LoadingSkeleton";
+import { exportToExcel } from "../utils/excel";
 import toast from "react-hot-toast";
 
 export default function DailyRecap() {
@@ -78,6 +79,39 @@ export default function DailyRecap() {
     }
   };
 
+  // Export to Excel handler
+  const handleExportExcel = () => {
+    if (recapData.length === 0) {
+      toast.error("Tidak ada data rekap untuk diekspor");
+      return;
+    }
+
+    try {
+      const dataForExcel = recapData.map((r, index) => ({
+        "No": index + 1,
+        "Kode Rider": r.code,
+        "Nama Rider": r.name,
+        "No. Telepon": r.phone || "-",
+        "Tanggal": selectedDate,
+        "Total Cup Terjual": Number(r.total_cups) || 0,
+        "Total Omzet (Rp)": Number(r.total_omzet) || 0,
+        "Status Setoran": r.status_input,
+        "Jumlah Transaksi": Number(r.transaction_count) || 0,
+      }));
+
+      exportToExcel({
+        data: dataForExcel,
+        filename: `Rekap_Setoran_Rider_${selectedDate}`,
+        sheetName: "Rekap Harian",
+        columnWidths: [6, 14, 22, 16, 14, 18, 18, 16, 16],
+      });
+
+      toast.success("File Excel (.xlsx) berhasil diunduh!");
+    } catch (err) {
+      toast.error(err.message || "Gagal mengekspor data ke Excel");
+    }
+  };
+
   // Summary Metrics
   const totalOmzetDay = recapData.reduce((sum, r) => sum + r.total_omzet, 0);
   const totalCupsDay = recapData.reduce((sum, r) => sum + r.total_cups, 0);
@@ -97,16 +131,29 @@ export default function DailyRecap() {
           </p>
         </div>
 
-        {/* Date Selector */}
-        <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-2xl border border-amber-200 shadow-xs self-start sm:self-auto">
-          <Calendar className="w-4 h-4 text-coffee-600" />
-          <span className="text-xs font-bold text-espresso">Tanggal:</span>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="text-xs font-bold text-espresso bg-transparent outline-hidden"
-          />
+        <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-auto">
+          {/* Date Selector */}
+          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-2xl border border-amber-200 shadow-xs">
+            <Calendar className="w-4 h-4 text-coffee-600" />
+            <span className="text-xs font-bold text-espresso">Tanggal:</span>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="text-xs font-bold text-espresso bg-transparent outline-hidden"
+            />
+          </div>
+
+          {/* Export Excel Button */}
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-2 transition-colors"
+            title="Unduh Rekap Excel"
+          >
+            <Download className="w-4 h-4" />
+            <span>Ekspor Excel (.xlsx)</span>
+          </button>
         </div>
       </div>
 

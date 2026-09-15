@@ -1,34 +1,46 @@
-import React from "react";
-import { Plus, Coffee } from "lucide-react";
-import { formatRupiah } from "../../utils/formatters";
+import React, { useState, useEffect } from "react";
+import { Plus } from "lucide-react";
+import { formatRupiah, getProductInitials, getProductColorClass } from "../../utils/formatters";
 import { getImageUrl } from "../../utils/api";
 
 export default function ProductCard({ product, onAddToCart }) {
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [product.image]);
+
+  const showImage = Boolean(product.image) && !imgError;
+  const initials = getProductInitials(product.name);
+  const colorClass = getProductColorClass(product.name);
+
   return (
     <div
       onClick={() => onAddToCart(product)}
       className="group relative bg-white rounded-2xl sm:rounded-3xl p-3 border border-amber-100 hover:border-coffee-400 shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between overflow-hidden"
     >
-      {/* Product Image / Icon Banner */}
-      <div className="w-full aspect-square rounded-xl sm:rounded-2xl bg-[#fbf8f4] border border-amber-100/70 mb-2.5 flex items-center justify-center overflow-hidden relative">
-        {product.image ? (
+      {/* Product Image / Initials Placeholder Banner */}
+      <div className="w-full aspect-square rounded-xl sm:rounded-2xl bg-[#fbf8f4] border border-amber-100/70 mb-2.5 flex items-center justify-center overflow-hidden relative select-none">
+        {showImage ? (
           <img
             src={getImageUrl(product.image)}
             alt={product.name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            onError={(e) => {
-              e.target.style.display = "none";
-              if (e.target.nextSibling) e.target.nextSibling.style.display = "flex";
-            }}
+            onError={() => setImgError(true)}
+            loading="lazy"
           />
-        ) : null}
-        <div
-          className={`w-full h-full flex items-center justify-center text-coffee-400 ${
-            product.image ? "hidden" : "flex"
-          }`}
-        >
-          <Coffee className="w-8 h-8 sm:w-10 sm:h-10 group-hover:scale-110 transition-transform duration-300" />
-        </div>
+        ) : (
+          <div
+            className={`w-full h-full flex flex-col items-center justify-center font-black transition-transform duration-300 group-hover:scale-105 shadow-inner ${colorClass}`}
+          >
+            <span className="text-2xl sm:text-3xl tracking-widest uppercase drop-shadow-xs">
+              {initials}
+            </span>
+            <span className="text-[9px] font-bold opacity-75 mt-0.5 tracking-wider uppercase">
+              {product.unit || "Cup"}
+            </span>
+          </div>
+        )}
 
         {/* Quick Add floating pill */}
         <button

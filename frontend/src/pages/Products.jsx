@@ -12,6 +12,7 @@ import Modal from "../components/common/Modal";
 import ConfirmDialog from "../components/common/ConfirmDialog";
 import Badge from "../components/common/Badge";
 import LoadingSkeleton from "../components/common/LoadingSkeleton";
+import ProductAvatar from "../components/common/ProductAvatar";
 import toast from "react-hot-toast";
 
 export default function Products() {
@@ -47,6 +48,7 @@ export default function Products() {
   });
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewImage, setPreviewImage] = useState("");
+  const [previewBroken, setPreviewBroken] = useState(false);
 
   const fetchCategories = async () => {
     try {
@@ -102,6 +104,7 @@ export default function Products() {
     });
     setSelectedFile(null);
     setPreviewImage("");
+    setPreviewBroken(false);
     setIsModalOpen(true);
   };
 
@@ -119,7 +122,8 @@ export default function Products() {
       status: p.status,
     });
     setSelectedFile(null);
-    setPreviewImage(p.image || "");
+    setPreviewImage(p.image ? getImageUrl(p.image) : "");
+    setPreviewBroken(false);
     setIsModalOpen(true);
   };
 
@@ -128,6 +132,7 @@ export default function Products() {
     if (file) {
       setSelectedFile(file);
       setPreviewImage(URL.createObjectURL(file));
+      setPreviewBroken(false);
     }
   };
 
@@ -293,13 +298,13 @@ export default function Products() {
                   <tr key={p.id} className="hover:bg-amber-50/30 transition-colors">
                     <td className="py-3.5 px-4 font-bold text-espresso">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-coffee-400 shrink-0 overflow-hidden">
-                          {p.image ? (
-                            <img src={getImageUrl(p.image)} alt={p.name} className="w-full h-full object-cover" />
-                          ) : (
-                            <Coffee className="w-4 h-4" />
-                          )}
-                        </div>
+                        <ProductAvatar
+                          image={p.image}
+                          name={p.name}
+                          size="md"
+                          mode="icon"
+                          rounded="rounded-xl"
+                        />
                         <span className="font-bold text-sm text-espresso">{p.name}</span>
                       </div>
                     </td>
@@ -516,23 +521,38 @@ export default function Products() {
             </div>
           </div>
 
-          {/* Image Upload Input */}
+          {/* Image Upload Input & Preview */}
           <div>
             <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
               Foto Produk (Opsional)
             </label>
             <div className="flex items-center gap-3">
-              {previewImage && (
-                <div className="w-14 h-14 rounded-xl border border-gray-200 overflow-hidden shrink-0">
-                  <img src={previewImage} alt="Preview" className="w-full h-full object-cover" />
-                </div>
-              )}
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                className="text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-amber-100 file:text-coffee-800 hover:file:bg-amber-200"
-              />
+              <div className="w-16 h-16 rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50/50 flex items-center justify-center overflow-hidden shrink-0 relative shadow-inner">
+                {previewImage && !previewBroken ? (
+                  <img
+                    src={previewImage}
+                    alt="Preview Foto Menu"
+                    className="w-full h-full object-cover"
+                    onError={() => setPreviewBroken(true)}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-amber-500/70 p-1">
+                    <ImageIcon className="w-6 h-6 stroke-[1.5]" />
+                    <span className="text-[9px] font-bold text-gray-400 mt-0.5">No Image</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 space-y-1">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="text-xs text-gray-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-amber-100 file:text-coffee-800 hover:file:bg-amber-200 cursor-pointer"
+                />
+                <p className="text-[11px] text-gray-400">
+                  Format: JPG, PNG, WebP. Jika gambar tidak tersedia atau rusak, sistem otomatis menggunakan placeholder icon / inisial.
+                </p>
+              </div>
             </div>
           </div>
 

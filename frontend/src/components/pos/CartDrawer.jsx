@@ -1,6 +1,7 @@
 import React from "react";
 import { Trash2, Plus, Minus, ShoppingBag, ArrowRight } from "lucide-react";
 import { formatRupiah } from "../../utils/formatters";
+import ProductAvatar from "../common/ProductAvatar";
 
 export default function CartDrawer({
   cartItems,
@@ -54,15 +55,23 @@ export default function CartDrawer({
               key={item.product_id}
               className="p-3 rounded-2xl border border-gray-100 bg-[#fcfaf7] hover:bg-cream-light/60 transition-all space-y-2 shadow-2xs"
             >
-              {/* Line 1: Item Name & Trash */}
-              <div className="flex items-center justify-between gap-2">
-                <h5 className="font-bold text-xs sm:text-sm text-espresso line-clamp-1 flex-1">
-                  {item.name}
-                </h5>
+              {/* Line 1: Item Thumbnail, Name & Trash */}
+              <div className="flex items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <ProductAvatar
+                    image={item.image}
+                    name={item.name}
+                    size="sm"
+                    rounded="rounded-lg"
+                  />
+                  <h5 className="font-bold text-xs sm:text-sm text-espresso line-clamp-1 flex-1">
+                    {item.name}
+                  </h5>
+                </div>
                 <button
                   type="button"
                   onClick={() => onRemoveItem(item.product_id)}
-                  className="p-1 text-gray-400 hover:text-red-500 rounded-lg transition-colors"
+                  className="p-1 text-gray-400 hover:text-red-500 rounded-lg transition-colors shrink-0"
                   title="Hapus item"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
