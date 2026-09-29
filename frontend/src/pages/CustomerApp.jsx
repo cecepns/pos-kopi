@@ -25,6 +25,7 @@ import { API_ENDPOINTS } from "../utils/endpoints";
 import { formatRupiah, formatDateTimeIndo } from "../utils/formatters";
 import Badge from "../components/common/Badge";
 import Modal from "../components/common/Modal";
+import LoadingSkeleton from "../components/common/LoadingSkeleton";
 import toast from "react-hot-toast";
 
 export default function CustomerApp() {
