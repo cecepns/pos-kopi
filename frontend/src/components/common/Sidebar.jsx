@@ -17,6 +17,7 @@ import {
   MapPin,
   UserCheck,
   Boxes,
+  Truck,
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 
@@ -29,6 +30,7 @@ export default function Sidebar({ isOpen, onClose }) {
       items: [
         { name: "Dashboard", path: "/", icon: LayoutDashboard, show: true },
         { name: "Live Tracking GPS", path: "/live-tracking", icon: MapPin, show: !isRider, highlight: true, isLive: true },
+        { name: "Customer Order (PWA)", path: "/customer", icon: Coffee, show: true, highlight: true },
       ],
     },
     {
@@ -36,11 +38,18 @@ export default function Sidebar({ isOpen, onClose }) {
       items: [
         { name: "Kasir (POS)", path: "/pos", icon: ShoppingCart, show: !isRider },
         { name: "Input Sales Rider", path: "/input-sales", icon: PlusCircle, show: true, highlight: true },
+        { name: "Armada & Checklist", path: "/fleet", icon: Truck, show: !isRider },
         { name: "Presensi Absensi", path: "/attendance", icon: UserCheck, show: isRider },
         { name: "Distribusi & Stok HO", path: "/ho-stock", icon: Boxes, show: true },
         { name: "Transaksi", path: "/transactions", icon: Receipt, show: true },
         { name: "Rekap Harian", path: "/daily-recap", icon: CalendarCheck, show: !isRider },
         { name: "Rekap Presensi", path: "/attendances", icon: UserCheck, show: !isRider },
+      ],
+    },
+    {
+      title: "MARKETING & CRM",
+      items: [
+        { name: "Customer & CRM", path: "/crm", icon: Users, show: isOwner || isAdmin },
       ],
     },
     {
@@ -53,8 +62,9 @@ export default function Sidebar({ isOpen, onClose }) {
       ],
     },
     {
-      title: "EVALUASI & LAPORAN",
+      title: "EVALUASI & ANALITIK",
       items: [
+        { name: "Analitik Lokasi", path: "/location-analytics", icon: MapPin, show: !isRider },
         { name: "Performa Rider", path: "/rider-performance", icon: TrendingUp, show: true },
         { name: "Target Rider", path: "/rider-targets", icon: Target, show: !isRider },
       ],

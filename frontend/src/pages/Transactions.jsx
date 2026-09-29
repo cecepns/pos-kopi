@@ -12,6 +12,8 @@ import {
   XCircle,
   Download,
   ShieldAlert,
+  Printer,
+  FileText,
 } from "lucide-react";
 import { request } from "../utils/request";
 import { API_ENDPOINTS } from "../utils/endpoints";
@@ -49,6 +51,7 @@ export default function Transactions() {
 
   // Modals
   const [selectedReceipt, setSelectedReceipt] = useState(null);
+  const [selectedDetail, setSelectedDetail] = useState(null);
   const [editSale, setEditSale] = useState(null);
   const [cancelSaleId, setCancelSaleId] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -161,6 +164,10 @@ export default function Transactions() {
             : "Manual",
         "Nama Rider": s.rider_name || "Counter Toko",
         "Total Cup": Number(s.total_items) || 0,
+        "Rincian Produk Terjual":
+          s.items && s.items.length > 0
+            ? s.items.map((i) => `${i.qty}x ${i.product_name}`).join(", ")
+            : s.items_summary || "-",
         "Total Omzet (Rp)": Number(s.total_amount) || 0,
         "Metode Bayar": (s.payment_method || "cash").toUpperCase(),
         "Diinput Oleh": s.creator_name || "-",
@@ -172,7 +179,7 @@ export default function Transactions() {
         data: dataForExcel,
         filename: `Laporan_Transaksi_${new Date().toISOString().split("T")[0]}`,
         sheetName: "Transaksi",
-        columnWidths: [6, 20, 14, 16, 20, 12, 18, 14, 16, 12, 25],
+        columnWidths: [6, 20, 14, 16, 20, 12, 35, 18, 14, 16, 12, 25],
       });
 
       toast.success("File Excel (.xlsx) berhasil diunduh!");
@@ -362,8 +369,44 @@ export default function Transactions() {
                     <td className="py-3 px-3 font-semibold text-espresso whitespace-nowrap">
                       {s.rider_name || "Counter Toko"}
                     </td>
-                    <td className="py-3 px-3 text-gray-600 font-medium whitespace-nowrap">
-                      {s.total_items} cup
+                    <td className="py-3 px-3 text-gray-700 min-w-[210px]">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="font-extrabold text-[11px] text-coffee-900 bg-amber-100/90 border border-amber-300/60 px-2 py-0.5 rounded-lg shadow-2xs inline-flex items-center gap-1">
+                          ☕ {s.total_items} cup
+                        </span>
+                        {s.items && s.items.length > 2 && (
+                          <span className="text-[10px] text-gray-400 font-medium">({s.items.length} varian)</span>
+                        )}
+                      </div>
+                      {s.items && s.items.length > 0 ? (
+                        <div className="space-y-1">
+                          {s.items.slice(0, 3).map((it, idx) => (
+                            <div key={idx} className="text-[11px] text-gray-800 flex items-center gap-1.5 leading-snug">
+                              <span className="font-bold text-coffee-800 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded text-[10px] shrink-0">
+                                {it.qty}x
+                              </span>
+                              <span className="truncate max-w-[170px] font-medium" title={it.product_name}>
+                                {it.product_name}
+                              </span>
+                            </div>
+                          ))}
+                          {s.items.length > 3 && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedDetail(s)}
+                              className="text-[10px] text-coffee-600 font-bold hover:underline cursor-pointer flex items-center gap-0.5"
+                            >
+                              +{s.items.length - 3} varian lainnya...
+                            </button>
+                          )}
+                        </div>
+                      ) : s.items_summary ? (
+                        <p className="text-[11px] text-gray-600 font-medium line-clamp-2" title={s.items_summary}>
+                          {s.items_summary}
+                        </p>
+                      ) : (
+                        <span className="text-[11px] text-gray-400 italic">-</span>
+                      )}
                     </td>
                     <td className="py-3 px-3 font-extrabold text-sm text-coffee-700 whitespace-nowrap">
                       {formatRupiah(s.total_amount)}
@@ -383,11 +426,19 @@ export default function Transactions() {
                       <div className="flex items-center justify-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => setSelectedReceipt(s)}
-                          title="Lihat Nota"
+                          onClick={() => setSelectedDetail(s)}
+                          title="Lihat Rincian Item Produk"
                           className="p-1.5 text-gray-500 hover:text-coffee-700 hover:bg-amber-100 rounded-lg transition-colors"
                         >
-                          <Eye className="w-3.5 h-3.5" />
+                          <FileText className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedReceipt(s)}
+                          title="Cetak Nota / Struk"
+                          className="p-1.5 text-gray-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-colors"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
@@ -506,6 +557,145 @@ export default function Transactions() {
         confirmText="Ya, Batalkan Transaksi"
         isLoading={isUpdating}
       />
+
+      {/* Detail Transaksi Modal */}
+      {selectedDetail && (
+        <Modal
+          isOpen={!!selectedDetail}
+          onClose={() => setSelectedDetail(null)}
+          title={`Rincian Transaksi #${selectedDetail.sale_number}`}
+          maxWidth="max-w-xl"
+        >
+          <div className="space-y-4 text-xs">
+            {/* Header metadata */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200/60">
+              <div>
+                <span className="text-[10px] text-gray-500 block uppercase font-bold">Tanggal</span>
+                <span className="font-bold text-gray-800">{formatDateIndo(selectedDetail.sale_date)}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-500 block uppercase font-bold">Saluran</span>
+                <Badge variant={selectedDetail.sales_channel === "rider" ? "coffee" : "default"} className="mt-0.5 capitalize text-[10px]">
+                  {selectedDetail.sales_channel}
+                </Badge>
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-500 block uppercase font-bold">Rider / Unit</span>
+                <span className="font-bold text-espresso">{selectedDetail.rider_name || "Counter Toko"}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-500 block uppercase font-bold">Status</span>
+                <Badge variant={selectedDetail.status === "completed" ? "success" : "danger"} className="mt-0.5 text-[10px]">
+                  {selectedDetail.status === "completed" ? "Selesai" : "Batal"}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Product items table */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-extrabold text-sm text-espresso flex items-center gap-1.5">
+                  <span>Daftar Produk Terjual</span>
+                  <span className="text-xs font-semibold text-coffee-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                    {selectedDetail.total_items} cup
+                  </span>
+                </h4>
+              </div>
+              <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-2xs">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-gray-50 text-[10px] font-bold uppercase text-gray-500 border-b border-gray-200">
+                    <tr>
+                      <th className="py-2.5 px-3">No</th>
+                      <th className="py-2.5 px-3">Produk</th>
+                      <th className="py-2.5 px-3 text-right">Harga Satuan</th>
+                      <th className="py-2.5 px-3 text-center">Qty</th>
+                      <th className="py-2.5 px-3 text-right">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {(selectedDetail.items || []).map((it, idx) => (
+                      <tr key={idx} className="hover:bg-amber-50/20">
+                        <td className="py-2.5 px-3 text-gray-400 font-medium">{idx + 1}</td>
+                        <td className="py-2.5 px-3 font-semibold text-gray-800">{it.product_name}</td>
+                        <td className="py-2.5 px-3 text-right text-gray-600">{formatRupiah(it.price)}</td>
+                        <td className="py-2.5 px-3 text-center font-bold text-coffee-800">
+                          <span className="bg-amber-100 px-2 py-0.5 rounded-md">{it.qty}</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-bold text-espresso">{formatRupiah(it.subtotal)}</td>
+                      </tr>
+                    ))}
+                    {(!selectedDetail.items || selectedDetail.items.length === 0) && (
+                      <tr>
+                        <td colSpan={5} className="py-4 text-center text-gray-400">
+                          {selectedDetail.items_summary || "Tidak ada detail item"}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                  <tfoot className="bg-amber-50/50 border-t border-gray-200 font-bold">
+                    <tr>
+                      <td colSpan={3} className="py-2.5 px-3 text-right text-gray-700">Total Tagihan:</td>
+                      <td className="py-2.5 px-3 text-center text-coffee-800">{selectedDetail.total_items} cup</td>
+                      <td className="py-2.5 px-3 text-right text-base text-coffee-700">
+                        {formatRupiah(selectedDetail.total_amount)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            {/* Financial summary & notes */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-1.5 text-[11px]">
+                <span className="font-bold text-gray-700 block">Informasi Pembayaran:</span>
+                <div className="flex justify-between text-gray-600">
+                  <span>Metode Bayar:</span>
+                  <span className="font-bold uppercase text-gray-800">{selectedDetail.payment_method}</span>
+                </div>
+                <div className="flex justify-between text-gray-600">
+                  <span>Uang Diterima:</span>
+                  <span className="font-semibold text-gray-800">{formatRupiah(selectedDetail.paid_amount || selectedDetail.total_amount)}</span>
+                </div>
+                <div className="flex justify-between text-gray-600">
+                  <span>Kembalian:</span>
+                  <span className="font-bold text-emerald-600">{formatRupiah(selectedDetail.change_amount || 0)}</span>
+                </div>
+              </div>
+              <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 text-[11px]">
+                <span className="font-bold text-gray-700 block mb-1">Catatan Transaksi:</span>
+                <p className="text-gray-600 italic">{selectedDetail.notes || "Tidak ada catatan."}</p>
+                <div className="mt-2 text-[10px] text-gray-400">
+                  Diinput oleh: <span className="font-medium text-gray-600">{selectedDetail.creator_name || "Sistem"}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-2.5 pt-3 border-t border-gray-100 justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedDetail(null)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl border border-gray-200 hover:bg-gray-100 cursor-pointer"
+              >
+                Tutup
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = selectedDetail;
+                  setSelectedDetail(null);
+                  setSelectedReceipt(target);
+                }}
+                className="px-4 py-2 text-xs font-bold text-white bg-coffee-600 hover:bg-coffee-700 rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Cetak Struk Thermal
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Receipt Modal */}
       <ReceiptModal

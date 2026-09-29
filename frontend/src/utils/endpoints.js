@@ -102,4 +102,63 @@ export const API_ENDPOINTS = {
     REJECTS_LIST: "/stocks/rejects",
     RETURN_HO: "/stocks/return-ho",
   },
+
+  CARTS: {
+    LIST: "/carts",
+    CREATE: "/carts",
+    UPDATE: (id) => `/carts/${id}`,
+    DELETE: (id) => `/carts/${id}`,
+    ASSIGN_RIDER: (id) => `/carts/${id}/assign-rider`,
+    CHECKLISTS: "/cart-checklists",
+    CREATE_CHECKLIST: "/cart-checklists",
+    DAMAGE_REPORTS: "/cart-damage-reports",
+    CREATE_DAMAGE_REPORT: "/cart-damage-reports",
+    UPDATE_DAMAGE_REPORT: (id) => `/cart-damage-reports/${id}`,
+  },
+
+  LOCATIONS: {
+    SALES: "/locations/sales",
+    TOP_PRODUCTIVE: "/locations/top-productive",
+  },
+
+  CRM: {
+    STATS: "/crm/stats",
+    CUSTOMERS: "/crm/customers",
+    CREATE_CUSTOMER: "/crm/customers",
+    UPDATE_CUSTOMER: (id) => `/crm/customers/${id}`,
+    DELETE_CUSTOMER: (id) => `/crm/customers/${id}`,
+    ADJUST_POINTS: (id) => `/crm/customers/${id}/adjust-points`,
+    VOUCHERS: "/crm/vouchers",
+    CREATE_VOUCHER: "/crm/vouchers",
+    UPDATE_VOUCHER: (id) => `/crm/vouchers/${id}`,
+    DELETE_VOUCHER: (id) => `/crm/vouchers/${id}`,
+    PROMOS: "/crm/promos",
+    CREATE_PROMO: "/crm/promos",
+    UPDATE_PROMO: (id) => `/crm/promos/${id}`,
+    DELETE_PROMO: (id) => `/crm/promos/${id}`,
+  },
+
+  REFILLS: {
+    LIST: "/refills",
+    REQUEST: "/refills",
+    APPROVE: (id) => `/refills/${id}/approve`,
+    REJECT: (id) => `/refills/${id}/reject`,
+  },
+
+  RATINGS: {
+    SUBMIT: (riderId) => `/riders/${riderId}/ratings`,
+    LIST: (riderId) => `/riders/${riderId}/ratings`,
+  },
+
+  CUSTOMER_APP: {
+    NEARBY_RIDERS: "/customer-app/nearby-riders",
+    ACTIVE_VOUCHERS: "/customer-app/active-vouchers",
+    CREATE_ORDER: "/customer-app/orders",
+    ORDER_DETAIL: (id) => `/customer-app/orders/${id}`,
+    UPDATE_STATUS: (id) => `/customer-app/orders/${id}/status`,
+    ORDER_HISTORY: "/customer-app/orders/history",
+    FAVORITES: "/customer-app/favorites",
+    TOGGLE_FAVORITE: "/customer-app/favorites/toggle",
+    RIDER_ORDERS: "/customer-app/rider-orders",
+  },
 };

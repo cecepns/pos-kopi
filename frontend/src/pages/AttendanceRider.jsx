@@ -34,6 +34,7 @@ export default function AttendanceRider() {
   const [notes, setNotes] = useState("");
   const [coords, setCoords] = useState({ lat: null, lng: null, accuracy: null });
   const [isLocating, setIsLocating] = useState(false);
+  const [targetNotification, setTargetNotification] = useState(null);
 
 
   const fetchTodayStatus = async () => {
@@ -134,6 +135,26 @@ export default function AttendanceRider() {
         closeActionModal();
         fetchTodayStatus();
         fetchHistory();
+
+        if (res.data?.target) {
+          setTargetNotification({
+            type: "clock_in",
+            title: "🎯 Target Jualan Hari Ini",
+            message: res.data.target.message,
+            targetQty: res.data.target.daily_target_qty,
+            targetAmount: res.data.target.daily_target_amount,
+          });
+        } else if (res.data?.evaluation) {
+          setTargetNotification({
+            type: "clock_out",
+            title: "🎉 Evaluasi Capaian Jualan Hari Ini",
+            message: res.data.evaluation.message,
+            soldQty: res.data.evaluation.cups_sold,
+            targetQty: res.data.evaluation.daily_target_qty,
+            remainingQty: res.data.evaluation.remaining_cups,
+            isAchieved: res.data.evaluation.is_achieved,
+          });
+        }
       } else {
         toast.error(res.message || "Gagal mencatat absensi");
       }
@@ -478,6 +499,71 @@ export default function AttendanceRider() {
           </div>
         </form>
       </Modal>
+
+      {/* Target & Evaluation Notification Modal */}
+      {targetNotification && (
+        <Modal
+          isOpen={!!targetNotification}
+          onClose={() => setTargetNotification(null)}
+          title={targetNotification.title}
+          maxWidth="max-w-md"
+        >
+          <div className="space-y-4 text-center py-2">
+            <div className={`w-16 h-16 rounded-3xl mx-auto flex items-center justify-center text-3xl shadow-lg ${
+              targetNotification.type === "clock_in"
+                ? "bg-amber-100 border border-amber-300"
+                : targetNotification.isAchieved
+                ? "bg-emerald-100 border border-emerald-300 text-emerald-600"
+                : "bg-coffee-100 border border-coffee-300"
+            }`}>
+              {targetNotification.type === "clock_in" ? "🎯" : targetNotification.isAchieved ? "🏆" : "☕"}
+            </div>
+
+            <div>
+              <h3 className="text-base font-black text-espresso">{targetNotification.title}</h3>
+              <p className="text-xs text-gray-600 mt-1 font-medium">{targetNotification.message}</p>
+            </div>
+
+            {targetNotification.type === "clock_in" ? (
+              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200 grid grid-cols-2 gap-3 text-left">
+                <div>
+                  <span className="text-[10px] text-gray-500 font-bold uppercase block">Target Qty</span>
+                  <span className="text-lg font-black text-coffee-800">{targetNotification.targetQty} Cup</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-500 font-bold uppercase block">Target Omzet</span>
+                  <span className="text-lg font-black text-emerald-600">Rp {targetNotification.targetAmount?.toLocaleString("id-ID")}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200 grid grid-cols-3 gap-2 text-center text-xs">
+                <div>
+                  <span className="text-[10px] text-gray-400 font-bold uppercase block">Terjual</span>
+                  <span className="text-base font-black text-espresso">{targetNotification.soldQty} cup</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-400 font-bold uppercase block">Target</span>
+                  <span className="text-base font-black text-gray-600">{targetNotification.targetQty} cup</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-gray-400 font-bold uppercase block">Sisa Target</span>
+                  <span className={`text-base font-black ${targetNotification.remainingQty > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                    {targetNotification.remainingQty} cup
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setTargetNotification(null)}
+              className="w-full py-3 bg-coffee-600 hover:bg-coffee-700 text-white font-black text-xs rounded-xl shadow-md transition-all active:scale-98 cursor-pointer"
+            >
+              {targetNotification.type === "clock_in" ? "Siap Bertugas! 🚀" : "Mengerti, Terima Kasih 👍"}
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

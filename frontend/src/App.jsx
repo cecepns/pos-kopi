@@ -27,6 +27,10 @@ import AttendanceRider from "./pages/AttendanceRider";
 import Attendances from "./pages/Attendances";
 import HoStock from "./pages/HoStock";
 import LiveTracking from "./pages/LiveTracking";
+import FleetManagement from "./pages/FleetManagement";
+import LocationAnalytics from "./pages/LocationAnalytics";
+import CustomerCrm from "./pages/CustomerCrm";
+import CustomerApp from "./pages/CustomerApp";
 
 // Protected Layout Component
 const AppLayout = ({ children }) => {
@@ -231,6 +235,34 @@ export default function App() {
                 </AppLayout>
               }
             />
+            <Route
+              path="/fleet"
+              element={
+                <AppLayout>
+                  <FleetManagement />
+                </AppLayout>
+              }
+            />
+            <Route
+              path="/location-analytics"
+              element={
+                <AppLayout>
+                  <LocationAnalytics />
+                </AppLayout>
+              }
+            />
+            <Route
+              path="/crm"
+              element={
+                <AppLayout>
+                  <CustomerCrm />
+                </AppLayout>
+              }
+            />
+
+            {/* Standalone Customer Ordering Portal (Accessible to public / QR customer) */}
+            <Route path="/customer" element={<CustomerApp />} />
+            <Route path="/order" element={<CustomerApp />} />
 
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" replace />} />

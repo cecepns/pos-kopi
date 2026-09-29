@@ -140,9 +140,16 @@ export default function HoStock() {
   });
   const [isSubmittingReject, setIsSubmittingReject] = useState(false);
 
-  // 4. Return to HO Confirm Dialog
-  const [returnTarget, setReturnTarget] = useState(null);
-  const [isReturnDialogOpen, setIsReturnDialogOpen] = useState(false);
+  // 4. Geser Produk Rider ke HO Modal
+  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+  const [returnFormData, setReturnFormData] = useState({
+    rider_id: "",
+    product_id: "",
+    stock_date: new Date().toISOString().split("T")[0],
+    qty: 1,
+    max_qty: 0,
+    notes: "",
+  });
   const [isSubmittingReturn, setIsSubmittingReturn] = useState(false);
 
   // ==========================================
@@ -385,22 +392,35 @@ export default function HoStock() {
     }
   };
 
-  // 4. Return Rider Stock to HO
-  const handleConfirmReturn = async () => {
-    if (!returnTarget) return;
+  // 4. Geser / Return Rider Stock to HO
+  const handleConfirmReturn = async (e) => {
+    if (e) e.preventDefault();
+    if (!returnFormData.rider_id || !returnFormData.product_id) {
+      toast.error("Pilih rider dan produk yang ingin digeser ke HO!");
+      return;
+    }
+    const qtyNum = parseInt(returnFormData.qty, 10);
+    if (isNaN(qtyNum) || qtyNum <= 0) {
+      toast.error("Jumlah return harus berupa angka positif (> 0)!");
+      return;
+    }
+    if (returnFormData.max_qty > 0 && qtyNum > returnFormData.max_qty) {
+      toast.error(`Jumlah melebihi sisa fisik produk yang dimiliki rider (${returnFormData.max_qty} cup)!`);
+      return;
+    }
+
     setIsSubmittingReturn(true);
     try {
       const res = await request.post(API_ENDPOINTS.STOCKS.RETURN_HO, {
-        rider_id: returnTarget.rider_id,
-        product_id: returnTarget.product_id,
-        stock_date: returnTarget.stock_date,
-        qty: returnTarget.remaining_qty,
-        notes: `Pengembalian sisa stok fisik harian dari ${returnTarget.rider_name}`,
+        rider_id: returnFormData.rider_id,
+        product_id: returnFormData.product_id,
+        stock_date: returnFormData.stock_date,
+        qty: qtyNum,
+        notes: returnFormData.notes || "Pengembalian stok produk dari rider ke gudang HO",
       });
       if (res.success) {
-        toast.success(res.message || "Sisa stok berhasil dikembalikan ke Gudang HO!");
-        setIsReturnDialogOpen(false);
-        setReturnTarget(null);
+        toast.success(res.message || "Sisa produk berhasil digeser kembali ke Gudang HO!");
+        setIsReturnModalOpen(false);
         fetchHoStockData();
         fetchRiderStocks();
         fetchMetadata();
@@ -936,6 +956,33 @@ export default function HoStock() {
                 <Download className="w-3.5 h-3.5" />
                 <span>Ekspor Excel</span>
               </button>
+
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const defaultRider = selectedRiderFilter || (activeRiders[0]?.id || "");
+                    const riderProds = riderStockItems.filter(
+                      (r) => String(r.rider_id) === String(defaultRider) && r.remaining_qty > 0
+                    );
+                    const firstProd = riderProds[0] || null;
+                    setReturnFormData({
+                      rider_id: defaultRider,
+                      product_id: firstProd ? firstProd.product_id : "",
+                      stock_date: riderStockDate || new Date().toISOString().split("T")[0],
+                      qty: firstProd ? firstProd.remaining_qty : 1,
+                      max_qty: firstProd ? firstProd.remaining_qty : 0,
+                      notes: "",
+                    });
+                    setIsReturnModalOpen(true);
+                  }}
+                  className="px-3.5 py-2 bg-coffee-700 hover:bg-coffee-800 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Geser produk dari rider kembali ke gudang pusat HO"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Geser ke HO</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -1023,13 +1070,20 @@ export default function HoStock() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setReturnTarget(item);
-                                  setIsReturnDialogOpen(true);
+                                  setReturnFormData({
+                                    rider_id: item.rider_id,
+                                    product_id: item.product_id,
+                                    stock_date: item.stock_date,
+                                    qty: item.remaining_qty,
+                                    max_qty: item.remaining_qty,
+                                    notes: `Pengembalian sisa stok fisik harian dari ${item.rider_name}`,
+                                  });
+                                  setIsReturnModalOpen(true);
                                 }}
-                                className="px-2.5 py-1 rounded-lg bg-coffee-50 hover:bg-coffee-100 text-coffee-700 text-xs font-bold border border-coffee-200 transition-colors"
-                                title="Kembalikan sisa fisik ke gudang HO"
+                                className="px-2.5 py-1 rounded-lg bg-coffee-50 hover:bg-coffee-100 text-coffee-700 text-xs font-bold border border-coffee-200 transition-colors cursor-pointer"
+                                title="Geser sisa fisik produk ke gudang HO"
                               >
-                                Return ke HO
+                                Geser ke HO
                               </button>
                             ) : (
                               <span className="text-gray-300 text-xs">&mdash;</span>
@@ -1612,17 +1666,146 @@ export default function HoStock() {
       </Modal>
 
       {/* ========================================================================= */}
-      {/* CONFIRM DIALOG: RETURN SISA STOK KE HO                                    */}
+      {/* MODAL: GESER PRODUK RIDER KE HO                                            */}
       {/* ========================================================================= */}
-      <ConfirmDialog
-        isOpen={isReturnDialogOpen}
-        onClose={() => setIsReturnDialogOpen(false)}
-        onConfirm={handleConfirmReturn}
-        title="Kembalikan Sisa Stok ke Gudang HO?"
-        message={`Apakah Anda yakin ingin mengembalikan sisa ${returnTarget?.remaining_qty || 0} cup ${returnTarget?.product_name || ""} dari ${returnTarget?.rider_name || ""} ke Gudang HO? Stok gudang pusat akan otomatis bertambah.`}
-        confirmText={isSubmittingReturn ? "Memproses..." : "Ya, Kembalikan ke HO"}
-        type="warning"
-      />
+      <Modal
+        isOpen={isReturnModalOpen}
+        onClose={() => setIsReturnModalOpen(false)}
+        title="Geser Produk Rider ke Gudang HO"
+        maxWidth="max-w-md"
+      >
+        <form onSubmit={handleConfirmReturn} className="space-y-4">
+          <p className="text-xs text-gray-500">
+            Form ini digunakan untuk mengembalikan atau menggeser sisa fisik stok produk dari tas jualan rider kembali ke persediaan Gudang HO.
+          </p>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Pilih Rider *</label>
+            <select
+              required
+              value={returnFormData.rider_id}
+              onChange={(e) => {
+                const newRiderId = e.target.value;
+                const rProds = riderStockItems.filter(
+                  (r) => String(r.rider_id) === String(newRiderId) && r.remaining_qty > 0
+                );
+                const first = rProds[0] || null;
+                setReturnFormData((prev) => ({
+                  ...prev,
+                  rider_id: newRiderId,
+                  product_id: first ? first.product_id : "",
+                  qty: first ? first.remaining_qty : 1,
+                  max_qty: first ? first.remaining_qty : 0,
+                }));
+              }}
+              className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-hidden"
+            >
+              <option value="">-- Pilih Rider --</option>
+              {activeRiders.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.code} - {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Pilih Produk Kopi *</label>
+            {returnFormData.rider_id ? (
+              <select
+                required
+                value={returnFormData.product_id}
+                onChange={(e) => {
+                  const prodId = Number(e.target.value);
+                  const matched = riderStockItems.find(
+                    (r) => String(r.rider_id) === String(returnFormData.rider_id) && r.product_id === prodId
+                  );
+                  const max = matched ? matched.remaining_qty : 0;
+                  setReturnFormData((prev) => ({
+                    ...prev,
+                    product_id: prodId,
+                    qty: max > 0 ? max : 1,
+                    max_qty: max,
+                  }));
+                }}
+                className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-hidden"
+              >
+                <option value="">-- Pilih Produk --</option>
+                {riderStockItems
+                  .filter((r) => String(r.rider_id) === String(returnFormData.rider_id) && r.remaining_qty > 0)
+                  .map((item) => (
+                    <option key={item.id} value={item.product_id}>
+                      {item.product_name} (Sisa Fisik: {item.remaining_qty} Cup)
+                    </option>
+                  ))}
+              </select>
+            ) : (
+              <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-400">
+                Pilih rider terlebih dahulu untuk melihat daftar produk yang dibawa
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">Tanggal Stok</label>
+              <input
+                type="date"
+                required
+                value={returnFormData.stock_date}
+                onChange={(e) => setReturnFormData({ ...returnFormData, stock_date: e.target.value })}
+                className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 focus:outline-hidden"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">
+                Jumlah Cup Ditransfer *
+                {returnFormData.max_qty > 0 && (
+                  <span className="text-gray-400 font-normal ml-1">(Max {returnFormData.max_qty})</span>
+                )}
+              </label>
+              <input
+                type="number"
+                required
+                min="1"
+                max={returnFormData.max_qty || undefined}
+                value={returnFormData.qty}
+                onChange={(e) => setReturnFormData({ ...returnFormData, qty: e.target.value })}
+                className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-black text-coffee-800 focus:outline-hidden"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">Catatan Pengembalian</label>
+            <textarea
+              value={returnFormData.notes}
+              onChange={(e) => setReturnFormData({ ...returnFormData, notes: e.target.value })}
+              placeholder="Contoh: Sisa jualan rute pagi dikembalikan ke freezer HO..."
+              rows={2}
+              className="w-full px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-700 focus:outline-hidden"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-3 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => setIsReturnModalOpen(false)}
+              className="flex-1 py-2.5 text-xs font-semibold rounded-xl border border-gray-200 hover:bg-gray-100 cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmittingReturn || !returnFormData.product_id}
+              className="flex-1 py-2.5 text-xs font-bold text-white bg-coffee-700 hover:bg-coffee-800 rounded-xl disabled:opacity-50 cursor-pointer shadow-xs"
+            >
+              {isSubmittingReturn ? "Memproses..." : "Konfirmasi Geser ke HO"}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

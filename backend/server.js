@@ -257,6 +257,199 @@ const pool = mysql.createPool({
       console.warn('⚠️ stock_movements table check warning:', movErr.message);
     }
 
+    // 9. Ensure Armada (carts, checklists, damage reports) exist
+    try {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS \`carts\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`cart_code\` VARCHAR(50) NOT NULL UNIQUE,
+          \`name\` VARCHAR(100) NOT NULL,
+          \`cart_type\` ENUM('sepeda_listrik', 'gerobak_motor', 'gerobak_dorong', 'motor_box') NOT NULL DEFAULT 'sepeda_listrik',
+          \`current_rider_id\` INT NULL,
+          \`condition_status\` ENUM('good', 'fair', 'needs_repair', 'broken') NOT NULL DEFAULT 'good',
+          \`status\` ENUM('active', 'in_use', 'maintenance', 'inactive') NOT NULL DEFAULT 'active',
+          \`notes\` TEXT NULL,
+          \`last_service_date\` DATE NULL,
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX \`idx_carts_rider\` (\`current_rider_id\`),
+          INDEX \`idx_carts_status\` (\`status\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS \`cart_checklists\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`cart_id\` INT NOT NULL,
+          \`rider_id\` INT NOT NULL,
+          \`checklist_date\` DATE NOT NULL,
+          \`checklist_type\` ENUM('pre_sales', 'post_sales') NOT NULL,
+          \`tire_condition\` ENUM('good', 'bad') NOT NULL DEFAULT 'good',
+          \`brakes_chain_condition\` ENUM('good', 'bad') NOT NULL DEFAULT 'good',
+          \`box_ice_cleanliness\` ENUM('clean', 'dirty') NOT NULL DEFAULT 'clean',
+          \`cup_sealer_ready\` ENUM('ready', 'not_ready') NOT NULL DEFAULT 'ready',
+          \`general_cleanliness\` ENUM('clean', 'dirty') NOT NULL DEFAULT 'clean',
+          \`notes\` VARCHAR(255) NULL,
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX \`idx_checklists_cart\` (\`cart_id\`),
+          INDEX \`idx_checklists_rider\` (\`rider_id\`),
+          INDEX \`idx_checklists_date\` (\`checklist_date\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS \`cart_damage_reports\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`cart_id\` INT NOT NULL,
+          \`rider_id\` INT NULL,
+          \`reported_by\` INT NOT NULL,
+          \`title\` VARCHAR(150) NOT NULL,
+          \`description\` TEXT NOT NULL,
+          \`severity\` ENUM('low', 'medium', 'high', 'critical') NOT NULL DEFAULT 'medium',
+          \`photo\` VARCHAR(255) NULL,
+          \`status\` ENUM('reported', 'in_repair', 'repaired', 'cancelled') NOT NULL DEFAULT 'reported',
+          \`repair_cost\` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+          \`repaired_at\` TIMESTAMP NULL,
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX \`idx_dmg_cart\` (\`cart_id\`),
+          INDEX \`idx_dmg_status\` (\`status\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+      console.log('✅ Checked/created armada tables (carts, checklists, damage reports)');
+    } catch (cartErr) {
+      console.warn('⚠️ Armada tables check warning:', cartErr.message);
+    }
+
+    // 10. Ensure CRM & Loyalty tables (customers, vouchers, promos, ratings, refill_requests) exist
+    try {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS \`customers\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`user_id\` INT NULL,
+          \`name\` VARCHAR(100) NOT NULL,
+          \`phone\` VARCHAR(30) NOT NULL UNIQUE,
+          \`email\` VARCHAR(100) NULL,
+          \`loyalty_points\` INT NOT NULL DEFAULT 0,
+          \`total_spend\` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+          \`total_orders\` INT NOT NULL DEFAULT 0,
+          \`last_order_date\` DATE NULL,
+          \`status\` ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX \`idx_customers_phone\` (\`phone\`),
+          INDEX \`idx_customers_status\` (\`status\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS \`vouchers\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`code\` VARCHAR(50) NOT NULL UNIQUE,
+          \`title\` VARCHAR(150) NOT NULL,
+          \`discount_type\` ENUM('percent', 'fixed') NOT NULL DEFAULT 'percent',
+          \`discount_value\` DECIMAL(12, 2) NOT NULL DEFAULT 10.00,
+          \`min_order_amount\` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+          \`max_discount\` DECIMAL(12, 2) NULL,
+          \`quota\` INT NOT NULL DEFAULT 100,
+          \`used_count\` INT NOT NULL DEFAULT 0,
+          \`start_date\` DATE NOT NULL,
+          \`end_date\` DATE NOT NULL,
+          \`status\` ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX \`idx_vouchers_code\` (\`code\`),
+          INDEX \`idx_vouchers_status\` (\`status\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS \`promos\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`title\` VARCHAR(150) NOT NULL,
+          \`description\` TEXT NULL,
+          \`banner_image\` VARCHAR(255) NULL,
+          \`discount_percent\` DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+          \`start_date\` DATE NOT NULL,
+          \`end_date\` DATE NOT NULL,
+          \`status\` ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS \`rider_ratings\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`rider_id\` INT NOT NULL,
+          \`customer_id\` INT NULL,
+          \`sale_id\` INT NULL,
+          \`rating\` INT NOT NULL DEFAULT 5,
+          \`review\` TEXT NULL,
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX \`idx_ratings_rider\` (\`rider_id\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS \`customer_favorite_riders\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`customer_id\` INT NOT NULL,
+          \`rider_id\` INT NOT NULL,
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY \`uk_cust_fav\` (\`customer_id\`, \`rider_id\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS \`refill_requests\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`rider_id\` INT NOT NULL,
+          \`product_id\` INT NOT NULL,
+          \`qty\` INT NOT NULL DEFAULT 10,
+          \`status\` ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+          \`notes\` VARCHAR(255) NULL,
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          \`resolved_at\` TIMESTAMP NULL,
+          INDEX \`idx_refill_status\` (\`status\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+      console.log('✅ Checked/created CRM, vouchers, ratings, and refill tables');
+    } catch (crmErr) {
+      console.warn('⚠️ CRM tables check warning:', crmErr.message);
+    }
+
+    // 11. Ensure sales & riders columns exist
+    try {
+      const [salesCols] = await conn.query("SHOW COLUMNS FROM `sales` LIKE 'customer_id'");
+      if (salesCols.length === 0) {
+        await conn.query(`
+          ALTER TABLE \`sales\`
+          ADD COLUMN \`customer_id\` INT NULL AFTER \`rider_id\`,
+          ADD COLUMN \`voucher_id\` INT NULL AFTER \`customer_id\`,
+          ADD COLUMN \`discount_amount\` DECIMAL(12, 2) NOT NULL DEFAULT 0.00 AFTER \`voucher_id\`,
+          ADD COLUMN \`order_status\` ENUM('pending', 'accepted', 'brewing', 'ready', 'completed', 'cancelled') NOT NULL DEFAULT 'completed' AFTER \`status\`,
+          ADD COLUMN \`location_name\` VARCHAR(150) NULL AFTER \`order_status\`,
+          ADD COLUMN \`customer_lat\` DECIMAL(10, 8) NULL AFTER \`location_name\`,
+          ADD COLUMN \`customer_lng\` DECIMAL(11, 8) NULL AFTER \`customer_lat\`
+        `);
+        console.log('✅ Added customer, voucher, and order_status columns to sales table');
+      }
+
+      const [riderCartCols] = await conn.query("SHOW COLUMNS FROM `riders` LIKE 'cart_id'");
+      if (riderCartCols.length === 0) {
+        await conn.query(`
+          ALTER TABLE \`riders\`
+          ADD COLUMN \`cart_id\` INT NULL AFTER \`has_app_access\`,
+          ADD COLUMN \`average_rating\` DECIMAL(3, 2) NOT NULL DEFAULT 5.00 AFTER \`is_duty\`,
+          ADD COLUMN \`total_reviews\` INT NOT NULL DEFAULT 0 AFTER \`average_rating\`
+        `);
+        console.log('✅ Added cart_id and rating columns to riders table');
+      }
+    } catch (colErr) {
+      console.warn('⚠️ Sales & Riders extra columns warning:', colErr.message);
+    }
+
     conn.release();
   } catch (err) {
     console.error(`❌ MySQL Connection Failed: ${err.message}`);
@@ -1995,6 +2188,27 @@ app.get('/api/sales', async (req, res) => {
       LIMIT ? OFFSET ?
     `, [...params, limitNum, offset]);
 
+    if (rows.length > 0) {
+      const saleIds = rows.map((r) => r.id);
+      const [allItems] = await pool.query(
+        'SELECT * FROM sale_items WHERE sale_id IN (?) ORDER BY id ASC',
+        [saleIds]
+      );
+      const itemsBySaleId = {};
+      for (const item of allItems) {
+        if (!itemsBySaleId[item.sale_id]) {
+          itemsBySaleId[item.sale_id] = [];
+        }
+        itemsBySaleId[item.sale_id].push(item);
+      }
+      for (const row of rows) {
+        row.items = itemsBySaleId[row.id] || [];
+        row.items_summary = row.items
+          .map((i) => `${i.qty}x ${i.product_name}`)
+          .join(', ');
+      }
+    }
+
     return sendSuccess(res, rows, {
       page: pageNum,
       limit: limitNum,
@@ -2865,7 +3079,24 @@ app.post('/api/attendances/clock-in', upload.single('photo'), async (req, res) =
       [effectiveRiderId, todayStr]
     );
 
-    return sendSuccess(res, saved[0], null, 'Berhasil melakukan absen masuk! Semangat bertugas.');
+    // Fetch monthly target for rider to calculate daily goal
+    const currentMonth = todayStr.slice(0, 7);
+    const [targetRows] = await pool.query(
+      'SELECT target_qty, target_amount FROM rider_targets WHERE rider_id = ? AND period_month = ?',
+      [effectiveRiderId, currentMonth]
+    );
+    const monthlyQty = targetRows[0]?.target_qty || 1300;
+    const monthlyAmount = targetRows[0]?.target_amount || 13000000;
+    const dailyTargetQty = Math.ceil(monthlyQty / 26);
+    const dailyTargetAmount = Math.ceil(monthlyAmount / 26);
+
+    const targetInfo = {
+      daily_target_qty: dailyTargetQty,
+      daily_target_amount: dailyTargetAmount,
+      message: `Semangat bertugas! Target jualan Anda hari ini: ${dailyTargetQty} Cup (Rp ${dailyTargetAmount.toLocaleString('id-ID')}).`
+    };
+
+    return sendSuccess(res, { ...saved[0], target: targetInfo }, null, targetInfo.message);
   } catch (err) {
     return sendError(res, err.message, 500);
   }
@@ -2931,7 +3162,42 @@ app.post('/api/attendances/clock-out', upload.single('photo'), async (req, res) 
     }
 
     const [saved] = await pool.query('SELECT * FROM attendances WHERE id = ?', [existing[0].id]);
-    return sendSuccess(res, saved[0], null, 'Berhasil melakukan absen pulang! Terima kasih atas dedikasi Anda.');
+
+    // Calculate performance today
+    const currentMonth = todayStr.slice(0, 7);
+    const [targetRows] = await pool.query(
+      'SELECT target_qty, target_amount FROM rider_targets WHERE rider_id = ? AND period_month = ?',
+      [effectiveRiderId, currentMonth]
+    );
+    const dailyTargetQty = Math.ceil((targetRows[0]?.target_qty || 1300) / 26);
+
+    const [soldRows] = await pool.query(`
+      SELECT 
+        COALESCE(SUM(si.qty), 0) AS total_cups_sold,
+        COALESCE(SUM(s.total_amount), 0) AS total_sales_amount
+      FROM sales s
+      JOIN sale_items si ON s.id = si.sale_id
+      WHERE (s.rider_id = ? OR s.created_by = ?) 
+        AND s.sale_date = ? 
+        AND s.status = 'completed'
+    `, [effectiveRiderId, authUser?.id || 0, todayStr]);
+
+    const cupsSold = Number(soldRows[0]?.total_cups_sold) || 0;
+    const salesAmount = Number(soldRows[0]?.total_sales_amount) || 0;
+    const remainingCups = Math.max(0, dailyTargetQty - cupsSold);
+
+    const evaluation = {
+      daily_target_qty: dailyTargetQty,
+      cups_sold: cupsSold,
+      sales_amount: salesAmount,
+      remaining_cups: remainingCups,
+      is_achieved: cupsSold >= dailyTargetQty,
+      message: cupsSold >= dailyTargetQty 
+        ? `Luar biasa! Target hari ini tercapai (${cupsSold} / ${dailyTargetQty} cup)! Selamat beristirahat.` 
+        : `Hari ini terjual ${cupsSold} cup (sisa target: ${remainingCups} cup). Tetap semangat untuk esok hari!`
+    };
+
+    return sendSuccess(res, { ...saved[0], evaluation }, null, evaluation.message);
   } catch (err) {
     return sendError(res, err.message, 500);
   }
@@ -3068,6 +3334,1280 @@ app.post('/api/riders/location', async (req, res) => {
       lng: parsedLng,
       updated_at: new Date().toISOString()
     }, null, 'Lokasi berhasil diperbarui');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// =========================================================================
+// ARMADA (FLEET MANAGEMENT): CARTS, CHECKLISTS, DAMAGE REPORTS
+// =========================================================================
+
+// 1. List Carts
+app.get('/api/carts', async (req, res) => {
+  try {
+    const { page = 1, limit = 10, search = '', status = '', condition_status = '' } = req.query;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 10));
+    const offset = (pageNum - 1) * limitNum;
+
+    let where = 'WHERE 1=1';
+    const params = [];
+    if (search) {
+      where += ' AND (c.cart_code LIKE ? OR c.name LIKE ? OR r.name LIKE ?)';
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+    if (status) {
+      where += ' AND c.status = ?';
+      params.push(status);
+    }
+    if (condition_status) {
+      where += ' AND c.condition_status = ?';
+      params.push(condition_status);
+    }
+
+    const [cnt] = await pool.query(`
+      SELECT COUNT(*) AS total 
+      FROM carts c 
+      LEFT JOIN riders r ON c.current_rider_id = r.id 
+      ${where}
+    `, params);
+    const total = cnt[0]?.total || 0;
+
+    const [rows] = await pool.query(`
+      SELECT 
+        c.*,
+        r.name AS current_rider_name,
+        r.code AS current_rider_code,
+        r.phone AS current_rider_phone
+      FROM carts c
+      LEFT JOIN riders r ON c.current_rider_id = r.id
+      ${where}
+      ORDER BY c.id DESC
+      LIMIT ? OFFSET ?
+    `, [...params, limitNum, offset]);
+
+    return sendSuccess(res, rows, { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) });
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 2. Create Cart
+app.post('/api/carts', async (req, res) => {
+  try {
+    const { cart_code, name, cart_type = 'sepeda_listrik', condition_status = 'good', status = 'active', notes = '' } = req.body;
+    if (!cart_code || !name) {
+      return sendError(res, 'Kode armada dan nama gerobak/sepeda wajib diisi!', 400);
+    }
+    const [result] = await pool.query(`
+      INSERT INTO carts (cart_code, name, cart_type, condition_status, status, notes)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [cart_code.toUpperCase().trim(), name.trim(), cart_type, condition_status, status, notes]);
+
+    return sendSuccess(res, { id: result.insertId, cart_code, name }, null, 'Armada cart berhasil ditambahkan');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 3. Update Cart
+app.put('/api/carts/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { name, cart_type, condition_status, status, notes, last_service_date } = req.body;
+    await pool.query(`
+      UPDATE carts SET
+        name = COALESCE(?, name),
+        cart_type = COALESCE(?, cart_type),
+        condition_status = COALESCE(?, condition_status),
+        status = COALESCE(?, status),
+        notes = COALESCE(?, notes),
+        last_service_date = COALESCE(?, last_service_date)
+      WHERE id = ?
+    `, [name, cart_type, condition_status, status, notes, last_service_date, id]);
+
+    return sendSuccess(res, { id }, null, 'Data armada berhasil diperbarui');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 4. Assign / Unassign Rider to Cart
+app.post('/api/carts/:id/assign-rider', async (req, res) => {
+  try {
+    const cartId = Number(req.params.id);
+    const { rider_id } = req.body;
+    const targetRiderId = rider_id ? Number(rider_id) : null;
+
+    // Reset previous assignment on this cart
+    await pool.query('UPDATE riders SET cart_id = NULL WHERE cart_id = ?', [cartId]);
+
+    if (targetRiderId) {
+      await pool.query('UPDATE carts SET current_rider_id = NULL, status = "active" WHERE current_rider_id = ?', [targetRiderId]);
+      await pool.query('UPDATE riders SET cart_id = ? WHERE id = ?', [cartId, targetRiderId]);
+      await pool.query('UPDATE carts SET current_rider_id = ?, status = "in_use" WHERE id = ?', [targetRiderId, cartId]);
+    } else {
+      await pool.query('UPDATE carts SET current_rider_id = NULL, status = "active" WHERE id = ?', [cartId]);
+    }
+
+    return sendSuccess(res, { cart_id: cartId, rider_id: targetRiderId }, null, 'Penugasan armada berhasil disimpan');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 5. Delete Cart
+app.delete('/api/carts/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    await pool.query('UPDATE riders SET cart_id = NULL WHERE cart_id = ?', [id]);
+    await pool.query('DELETE FROM carts WHERE id = ?', [id]);
+    return sendSuccess(res, { id }, null, 'Armada berhasil dihapus');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 6. List Checklists
+app.get('/api/cart-checklists', async (req, res) => {
+  try {
+    const { page = 1, limit = 10, cart_id = '', rider_id = '', checklist_type = '', date = '' } = req.query;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 10));
+    const offset = (pageNum - 1) * limitNum;
+
+    let where = 'WHERE 1=1';
+    const params = [];
+    if (cart_id) { where += ' AND chk.cart_id = ?'; params.push(Number(cart_id)); }
+    if (rider_id) { where += ' AND chk.rider_id = ?'; params.push(Number(rider_id)); }
+    if (checklist_type) { where += ' AND chk.checklist_type = ?'; params.push(checklist_type); }
+    if (date) { where += ' AND chk.checklist_date = ?'; params.push(date); }
+
+    const [cnt] = await pool.query(`SELECT COUNT(*) AS total FROM cart_checklists chk ${where}`, params);
+    const total = cnt[0]?.total || 0;
+
+    const [rows] = await pool.query(`
+      SELECT 
+        chk.*,
+        c.cart_code,
+        c.name AS cart_name,
+        r.name AS rider_name,
+        r.code AS rider_code
+      FROM cart_checklists chk
+      LEFT JOIN carts c ON chk.cart_id = c.id
+      LEFT JOIN riders r ON chk.rider_id = r.id
+      ${where}
+      ORDER BY chk.id DESC
+      LIMIT ? OFFSET ?
+    `, [...params, limitNum, offset]);
+
+    return sendSuccess(res, rows, { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) });
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 7. Create Checklist
+app.post('/api/cart-checklists', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    const { 
+      cart_id, 
+      rider_id, 
+      checklist_type = 'pre_sales', 
+      checklist_date,
+      tire_condition = 'good',
+      brakes_chain_condition = 'good',
+      box_ice_cleanliness = 'clean',
+      cup_sealer_ready = 'ready',
+      general_cleanliness = 'clean',
+      notes = ''
+    } = req.body;
+
+    const effectiveRiderId = rider_id ? Number(rider_id) : (authUser?.rider_id || null);
+    if (!cart_id || !effectiveRiderId) {
+      return sendError(res, 'Pilih Cart dan Rider untuk mengisi checklist!', 400);
+    }
+
+    const todayStr = checklist_date || new Date().toISOString().split('T')[0];
+
+    const [result] = await pool.query(`
+      INSERT INTO cart_checklists 
+        (cart_id, rider_id, checklist_date, checklist_type, tire_condition, brakes_chain_condition, box_ice_cleanliness, cup_sealer_ready, general_cleanliness, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [cart_id, effectiveRiderId, todayStr, checklist_type, tire_condition, brakes_chain_condition, box_ice_cleanliness, cup_sealer_ready, general_cleanliness, notes]);
+
+    return sendSuccess(res, { id: result.insertId }, null, 'Checklist inspeksi berhasil disimpan');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 8. List Damage Reports
+app.get('/api/cart-damage-reports', async (req, res) => {
+  try {
+    const { page = 1, limit = 10, status = '', severity = '', cart_id = '' } = req.query;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 10));
+    const offset = (pageNum - 1) * limitNum;
+
+    let where = 'WHERE 1=1';
+    const params = [];
+    if (status) { where += ' AND d.status = ?'; params.push(status); }
+    if (severity) { where += ' AND d.severity = ?'; params.push(severity); }
+    if (cart_id) { where += ' AND d.cart_id = ?'; params.push(Number(cart_id)); }
+
+    const [cnt] = await pool.query(`SELECT COUNT(*) AS total FROM cart_damage_reports d ${where}`, params);
+    const total = cnt[0]?.total || 0;
+
+    const [rows] = await pool.query(`
+      SELECT 
+        d.*,
+        c.cart_code,
+        c.name AS cart_name,
+        r.name AS rider_name,
+        u.name AS reporter_name
+      FROM cart_damage_reports d
+      LEFT JOIN carts c ON d.cart_id = c.id
+      LEFT JOIN riders r ON d.rider_id = r.id
+      LEFT JOIN users u ON d.reported_by = u.id
+      ${where}
+      ORDER BY d.id DESC
+      LIMIT ? OFFSET ?
+    `, [...params, limitNum, offset]);
+
+    return sendSuccess(res, rows, { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) });
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 9. Create Damage Report
+app.post('/api/cart-damage-reports', upload.single('photo'), async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    const { cart_id, rider_id, title, description, severity = 'medium' } = req.body;
+    if (!cart_id || !title || !description) {
+      return sendError(res, 'Pilih armada, judul kerusakan, dan deskripsi kerusakan!', 400);
+    }
+    const photoPath = req.file ? `/${UPLOAD_DIR_NAME}/${req.file.filename}` : null;
+    const effectiveRiderId = rider_id ? Number(rider_id) : (authUser?.rider_id || null);
+
+    const [result] = await pool.query(`
+      INSERT INTO cart_damage_reports (cart_id, rider_id, reported_by, title, description, severity, photo, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'reported')
+    `, [cart_id, effectiveRiderId, authUser?.id || 1, title, description, severity, photoPath]);
+
+    if (severity === 'high' || severity === 'critical') {
+      await pool.query('UPDATE carts SET condition_status = "needs_repair" WHERE id = ?', [cart_id]);
+    }
+
+    return sendSuccess(res, { id: result.insertId }, null, 'Laporan kerusakan armada berhasil dikirim');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 10. Update Damage Report Status & Cost
+app.put('/api/cart-damage-reports/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { status, repair_cost = 0 } = req.body;
+    const repairedAt = status === 'repaired' ? new Date() : null;
+
+    const [row] = await pool.query('SELECT cart_id FROM cart_damage_reports WHERE id = ?', [id]);
+    if (row.length === 0) return sendError(res, 'Laporan tidak ditemukan', 404);
+
+    await pool.query(`
+      UPDATE cart_damage_reports SET
+        status = COALESCE(?, status),
+        repair_cost = COALESCE(?, repair_cost),
+        repaired_at = COALESCE(?, repaired_at)
+      WHERE id = ?
+    `, [status, Number(repair_cost), repairedAt, id]);
+
+    if (status === 'repaired' && row[0]?.cart_id) {
+      await pool.query('UPDATE carts SET condition_status = "good", last_service_date = CURDATE() WHERE id = ?', [row[0].cart_id]);
+    }
+
+    return sendSuccess(res, { id }, null, 'Status perbaikan armada diperbarui');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// =========================================================================
+// LOCATION ANALYTICS (LOCATION SALES & MOST PRODUCTIVE HOTSPOTS)
+// =========================================================================
+
+app.get('/api/locations/sales', async (req, res) => {
+  try {
+    const { start_date = '', end_date = '' } = req.query;
+    let where = 'WHERE s.status = "completed"';
+    const params = [];
+    if (start_date) { where += ' AND s.sale_date >= ?'; params.push(start_date); }
+    if (end_date) { where += ' AND s.sale_date <= ?'; params.push(end_date); }
+
+    const [rows] = await pool.query(`
+      SELECT 
+        COALESCE(NULLIF(s.location_name, ''), CONCAT('Area ', COALESCE(r.name, 'Counter Pusat'))) AS location_name,
+        COUNT(DISTINCT s.id) AS total_transactions,
+        COALESCE(SUM(si.qty), 0) AS total_cups,
+        COALESCE(SUM(s.total_amount), 0) AS total_revenue,
+        ROUND(COALESCE(SUM(s.total_amount), 0) / GREATEST(1, COUNT(DISTINCT s.id)), 0) AS avg_ticket
+      FROM sales s
+      LEFT JOIN sale_items si ON s.id = si.sale_id
+      LEFT JOIN riders r ON s.rider_id = r.id
+      ${where}
+      GROUP BY location_name
+      ORDER BY total_revenue DESC
+    `, params);
+
+    return sendSuccess(res, rows);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+app.get('/api/locations/top-productive', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT 
+        COALESCE(NULLIF(s.location_name, ''), CONCAT('Area ', COALESCE(r.name, 'Counter Pusat'))) AS location_name,
+        COUNT(DISTINCT s.id) AS total_transactions,
+        COALESCE(SUM(si.qty), 0) AS total_cups,
+        COALESCE(SUM(s.total_amount), 0) AS total_revenue,
+        ROUND(COALESCE(SUM(s.total_amount), 0) / GREATEST(1, COUNT(DISTINCT s.id)), 0) AS avg_ticket
+      FROM sales s
+      LEFT JOIN sale_items si ON s.id = si.sale_id
+      LEFT JOIN riders r ON s.rider_id = r.id
+      WHERE s.status = 'completed'
+      GROUP BY location_name
+      ORDER BY total_revenue DESC
+      LIMIT 10
+    `);
+
+    const grandTotal = rows.reduce((acc, curr) => acc + Number(curr.total_revenue), 0);
+    const enriched = rows.map((loc, idx) => ({
+      ...loc,
+      rank: idx + 1,
+      share_percent: grandTotal > 0 ? ((Number(loc.total_revenue) / grandTotal) * 100).toFixed(1) : '0.0',
+      status: idx === 0 ? 'Sangat Produktif (Hotspot Utama)' : idx < 3 ? 'Produktif Tinggi' : 'Potensial'
+    }));
+
+    return sendSuccess(res, enriched);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// =========================================================================
+// CUSTOMER & CRM: STATS, CUSTOMERS, VOUCHERS, PROMOS
+// =========================================================================
+
+// CRM Stats
+app.get('/api/crm/stats', async (req, res) => {
+  try {
+    const [[totalCust]] = await pool.query('SELECT COUNT(*) AS total FROM customers');
+    const [[newCust]] = await pool.query('SELECT COUNT(*) AS total FROM customers WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)');
+    const [[repeatCust]] = await pool.query('SELECT COUNT(*) AS total FROM customers WHERE total_orders > 1');
+    const [[inactiveCust]] = await pool.query('SELECT COUNT(*) AS total FROM customers WHERE last_order_date IS NULL OR last_order_date < DATE_SUB(CURDATE(), INTERVAL 30 DAY)');
+    const [[pointsTotal]] = await pool.query('SELECT COALESCE(SUM(loyalty_points), 0) AS total FROM customers');
+    const [[vouchersActive]] = await pool.query('SELECT COUNT(*) AS total FROM vouchers WHERE status = "active" AND CURDATE() BETWEEN start_date AND end_date');
+
+    return sendSuccess(res, {
+      total_customers: totalCust.total || 0,
+      new_customers: newCust.total || 0,
+      repeat_customers: repeatCust.total || 0,
+      inactive_customers: inactiveCust.total || 0,
+      total_loyalty_points: Number(pointsTotal.total) || 0,
+      active_vouchers_count: vouchersActive.total || 0
+    });
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// List Customers
+app.get('/api/crm/customers', async (req, res) => {
+  try {
+    const { page = 1, limit = 10, search = '', status = '' } = req.query;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit, 10) || 10));
+    const offset = (pageNum - 1) * limitNum;
+
+    let where = 'WHERE 1=1';
+    const params = [];
+    if (search) {
+      where += ' AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)';
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+    if (status) {
+      where += ' AND status = ?';
+      params.push(status);
+    }
+
+    const [cnt] = await pool.query(`SELECT COUNT(*) AS total FROM customers ${where}`, params);
+    const total = cnt[0]?.total || 0;
+
+    const [rows] = await pool.query(`
+      SELECT * FROM customers 
+      ${where} 
+      ORDER BY total_spend DESC, id DESC 
+      LIMIT ? OFFSET ?
+    `, [...params, limitNum, offset]);
+
+    return sendSuccess(res, rows, { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) });
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// Create Customer
+app.post('/api/crm/customers', async (req, res) => {
+  try {
+    const { name, phone, email } = req.body;
+    if (!name || !phone) return sendError(res, 'Nama dan nomor telepon pelanggan wajib diisi!', 400);
+
+    const [existing] = await pool.query('SELECT id FROM customers WHERE phone = ?', [phone.trim()]);
+    if (existing.length > 0) {
+      return sendError(res, 'Nomor telepon ini sudah terdaftar sebagai pelanggan!', 400);
+    }
+
+    const [result] = await pool.query(`
+      INSERT INTO customers (name, phone, email) VALUES (?, ?, ?)
+    `, [name.trim(), phone.trim(), email ? email.trim() : null]);
+
+    return sendSuccess(res, { id: result.insertId, name, phone }, null, 'Pelanggan berhasil ditambahkan');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// Update Customer
+app.put('/api/crm/customers/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { name, phone, email, status } = req.body;
+    await pool.query(`
+      UPDATE customers SET
+        name = COALESCE(?, name),
+        phone = COALESCE(?, phone),
+        email = COALESCE(?, email),
+        status = COALESCE(?, status)
+      WHERE id = ?
+    `, [name, phone, email, status, id]);
+    return sendSuccess(res, { id }, null, 'Data pelanggan berhasil diperbarui');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// Adjust Customer Loyalty Points
+app.post('/api/crm/customers/:id/adjust-points', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { points_delta } = req.body;
+    const delta = parseInt(points_delta, 10);
+    if (isNaN(delta) || delta === 0) return sendError(res, 'Jumlah penyesuaian poin harus valid!', 400);
+
+    await pool.query(`
+      UPDATE customers SET loyalty_points = GREATEST(0, loyalty_points + ?) WHERE id = ?
+    `, [delta, id]);
+
+    const [[cust]] = await pool.query('SELECT loyalty_points FROM customers WHERE id = ?', [id]);
+    return sendSuccess(res, { id, loyalty_points: cust.loyalty_points }, null, `Poin berhasil disesuaikan (${delta > 0 ? '+' : ''}${delta})`);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// Delete Customer
+app.delete('/api/crm/customers/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    await pool.query('DELETE FROM customers WHERE id = ?', [id]);
+    return sendSuccess(res, { id }, null, 'Data pelanggan berhasil dihapus');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// Vouchers CRUD
+app.get('/api/crm/vouchers', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM vouchers ORDER BY id DESC');
+    return sendSuccess(res, rows);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+app.post('/api/crm/vouchers', async (req, res) => {
+  try {
+    const { code, title, discount_type = 'percent', discount_value = 10, min_order_amount = 0, max_discount, quota = 100, start_date, end_date } = req.body;
+    if (!code || !title || !start_date || !end_date) {
+      return sendError(res, 'Kode voucher, judul promo, dan periode berlaku wajib diisi!', 400);
+    }
+    const [result] = await pool.query(`
+      INSERT INTO vouchers (code, title, discount_type, discount_value, min_order_amount, max_discount, quota, start_date, end_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [code.toUpperCase().trim(), title.trim(), discount_type, Number(discount_value), Number(min_order_amount), max_discount ? Number(max_discount) : null, parseInt(quota, 10) || 100, start_date, end_date]);
+
+    return sendSuccess(res, { id: result.insertId, code }, null, 'Voucher berhasil dibuat');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+app.put('/api/crm/vouchers/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { title, discount_type, discount_value, min_order_amount, max_discount, quota, start_date, end_date, status } = req.body;
+    await pool.query(`
+      UPDATE vouchers SET
+        title = COALESCE(?, title),
+        discount_type = COALESCE(?, discount_type),
+        discount_value = COALESCE(?, discount_value),
+        min_order_amount = COALESCE(?, min_order_amount),
+        max_discount = COALESCE(?, max_discount),
+        quota = COALESCE(?, quota),
+        start_date = COALESCE(?, start_date),
+        end_date = COALESCE(?, end_date),
+        status = COALESCE(?, status)
+      WHERE id = ?
+    `, [title, discount_type, discount_value, min_order_amount, max_discount, quota, start_date, end_date, status, id]);
+    return sendSuccess(res, { id }, null, 'Voucher berhasil diperbarui');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+app.delete('/api/crm/vouchers/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    await pool.query('DELETE FROM vouchers WHERE id = ?', [id]);
+    return sendSuccess(res, { id }, null, 'Voucher berhasil dihapus');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// Promos CRUD
+app.get('/api/crm/promos', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM promos ORDER BY id DESC');
+    return sendSuccess(res, rows);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+app.post('/api/crm/promos', upload.single('banner'), async (req, res) => {
+  try {
+    const { title, description = '', discount_percent = 0, start_date, end_date } = req.body;
+    if (!title || !start_date || !end_date) return sendError(res, 'Judul dan periode promo wajib diisi!', 400);
+    const bannerPath = req.file ? `/${UPLOAD_DIR_NAME}/${req.file.filename}` : null;
+
+    const [result] = await pool.query(`
+      INSERT INTO promos (title, description, banner_image, discount_percent, start_date, end_date)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [title.trim(), description, bannerPath, Number(discount_percent), start_date, end_date]);
+
+    return sendSuccess(res, { id: result.insertId }, null, 'Promo berhasil diterbitkan');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+app.put('/api/crm/promos/:id', upload.single('banner'), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { title, description, discount_percent, start_date, end_date, status } = req.body;
+    const bannerPath = req.file ? `/${UPLOAD_DIR_NAME}/${req.file.filename}` : undefined;
+
+    await pool.query(`
+      UPDATE promos SET
+        title = COALESCE(?, title),
+        description = COALESCE(?, description),
+        banner_image = COALESCE(?, banner_image),
+        discount_percent = COALESCE(?, discount_percent),
+        start_date = COALESCE(?, start_date),
+        end_date = COALESCE(?, end_date),
+        status = COALESCE(?, status)
+      WHERE id = ?
+    `, [title, description, bannerPath, discount_percent, start_date, end_date, status, id]);
+
+    return sendSuccess(res, { id }, null, 'Promo berhasil diperbarui');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+app.delete('/api/crm/promos/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    await pool.query('DELETE FROM promos WHERE id = ?', [id]);
+    return sendSuccess(res, { id }, null, 'Promo berhasil dihapus');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// =========================================================================
+// REFILL REQUESTS (RIDER REQUESTS REFILL, ADMIN/KASIR APPROVES)
+// =========================================================================
+
+app.get('/api/refills', async (req, res) => {
+  try {
+    const { status = '' } = req.query;
+    let where = 'WHERE 1=1';
+    const params = [];
+    if (status) { where += ' AND rf.status = ?'; params.push(status); }
+
+    const [rows] = await pool.query(`
+      SELECT 
+        rf.*,
+        r.name AS rider_name,
+        r.code AS rider_code,
+        r.phone AS rider_phone,
+        p.name AS product_name,
+        p.sku AS product_sku,
+        p.stock_ho AS current_ho_stock
+      FROM refill_requests rf
+      JOIN riders r ON rf.rider_id = r.id
+      JOIN products p ON rf.product_id = p.id
+      ${where}
+      ORDER BY rf.status = 'pending' DESC, rf.id DESC
+    `, params);
+
+    return sendSuccess(res, rows);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+app.post('/api/refills', async (req, res) => {
+  try {
+    const authUser = await getAuthUser(req);
+    const { rider_id, product_id, qty = 10, notes = '' } = req.body;
+    const effectiveRiderId = rider_id ? Number(rider_id) : (authUser?.rider_id || null);
+    if (!effectiveRiderId || !product_id || Number(qty) <= 0) {
+      return sendError(res, 'Rider ID, Produk, dan jumlah refill valid (> 0) wajib disertakan!', 400);
+    }
+
+    const [result] = await pool.query(`
+      INSERT INTO refill_requests (rider_id, product_id, qty, notes, status)
+      VALUES (?, ?, ?, ?, 'pending')
+    `, [effectiveRiderId, Number(product_id), Number(qty), notes]);
+
+    return sendSuccess(res, { id: result.insertId }, null, 'Permintaan refill stok berhasil dikirim ke Admin/HO');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+app.put('/api/refills/:id/approve', async (req, res) => {
+  const conn = await pool.getConnection();
+  try {
+    const id = Number(req.params.id);
+    const authUser = await getAuthUser(req);
+
+    await conn.beginTransaction();
+
+    const [rfRows] = await conn.query('SELECT * FROM refill_requests WHERE id = ? FOR UPDATE', [id]);
+    if (rfRows.length === 0) {
+      await conn.rollback();
+      return sendError(res, 'Permintaan refill tidak ditemukan!', 404);
+    }
+    const rf = rfRows[0];
+    if (rf.status !== 'pending') {
+      await conn.rollback();
+      return sendError(res, `Permintaan refill sudah dalam status ${rf.status}!`, 400);
+    }
+
+    const [pRows] = await conn.query('SELECT stock_ho, name FROM products WHERE id = ? FOR UPDATE', [rf.product_id]);
+    if (pRows.length === 0 || pRows[0].stock_ho < rf.qty) {
+      await conn.rollback();
+      return sendError(res, `Stok gudang HO tidak mencukupi untuk refill (Sisa HO: ${pRows[0]?.stock_ho || 0}, Diminta: ${rf.qty})`, 400);
+    }
+
+    // Deduct HO stock
+    await conn.query('UPDATE products SET stock_ho = stock_ho - ? WHERE id = ?', [rf.qty, rf.product_id]);
+
+    // Add or increment rider stock today
+    const todayStr = new Date().toISOString().split('T')[0];
+    await conn.query(`
+      INSERT INTO rider_stocks (rider_id, product_id, stock_date, allocated_qty)
+      VALUES (?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE allocated_qty = allocated_qty + VALUES(allocated_qty)
+    `, [rf.rider_id, rf.product_id, todayStr, rf.qty]);
+
+    // Record stock movement
+    await conn.query(`
+      INSERT INTO stock_movements (product_id, rider_id, movement_type, qty, notes, created_by)
+      VALUES (?, ?, 'transfer_to_rider', ?, 'Approval Refill Permintaan Rider', ?)
+    `, [rf.product_id, rf.rider_id, rf.qty, authUser?.id || 1]);
+
+    // Mark refill as approved
+    await conn.query('UPDATE refill_requests SET status = "approved", resolved_at = NOW() WHERE id = ?', [id]);
+
+    await conn.commit();
+    return sendSuccess(res, { id, status: 'approved' }, null, `Permintaan refill disetujui! ${rf.qty} cup ${pRows[0].name} telah ditransfer ke rider.`);
+  } catch (err) {
+    await conn.rollback();
+    return sendError(res, err.message, 500);
+  } finally {
+    conn.release();
+  }
+});
+
+app.put('/api/refills/:id/reject', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { reason = '' } = req.body;
+    await pool.query('UPDATE refill_requests SET status = "rejected", notes = CONCAT(COALESCE(notes, ""), " [Ditolak: ", ?, "]"), resolved_at = NOW() WHERE id = ?', [reason, id]);
+    return sendSuccess(res, { id, status: 'rejected' }, null, 'Permintaan refill telah ditolak');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// =========================================================================
+// RIDER RATINGS (STAR RATINGS & REVIEWS FROM CUSTOMERS)
+// =========================================================================
+
+app.post('/api/riders/:id/ratings', async (req, res) => {
+  try {
+    const riderId = Number(req.params.id);
+    const { rating, review = '', customer_id = null, sale_id = null } = req.body;
+    const star = Math.max(1, Math.min(5, parseInt(rating, 10) || 5));
+
+    await pool.query(`
+      INSERT INTO rider_ratings (rider_id, customer_id, sale_id, rating, review)
+      VALUES (?, ?, ?, ?, ?)
+    `, [riderId, customer_id ? Number(customer_id) : null, sale_id ? Number(sale_id) : null, star, review]);
+
+    // Recalculate average rating & review count for rider
+    const [[agg]] = await pool.query(`
+      SELECT COUNT(*) AS total_rev, ROUND(AVG(rating), 2) AS avg_rat
+      FROM rider_ratings
+      WHERE rider_id = ?
+    `, [riderId]);
+
+    await pool.query(`
+      UPDATE riders SET average_rating = ?, total_reviews = ? WHERE id = ?
+    `, [agg.avg_rat || star, agg.total_rev || 1, riderId]);
+
+    return sendSuccess(res, { rider_id: riderId, average_rating: agg.avg_rat, total_reviews: agg.total_rev }, null, 'Terima kasih atas penilaian Anda!');
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+app.get('/api/riders/:id/ratings', async (req, res) => {
+  try {
+    const riderId = Number(req.params.id);
+    const [rows] = await pool.query(`
+      SELECT 
+        rr.*,
+        c.name AS customer_name
+      FROM rider_ratings rr
+      LEFT JOIN customers c ON rr.customer_id = c.id
+      WHERE rr.rider_id = ?
+      ORDER BY rr.id DESC
+      LIMIT 50
+    `, [riderId]);
+
+    const [[stats]] = await pool.query(`
+      SELECT COUNT(*) AS total_reviews, ROUND(AVG(rating), 2) AS average_rating
+      FROM rider_ratings WHERE rider_id = ?
+    `, [riderId]);
+
+    return sendSuccess(res, {
+      ratings: rows,
+      summary: {
+        total_reviews: stats?.total_reviews || 0,
+        average_rating: stats?.average_rating || 5.0
+      }
+    });
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// =========================================================================
+// CUSTOMER ON-DEMAND WEB APP / PWA PORTAL
+// =========================================================================
+
+// 1. Nearby KOPIGO Riders
+app.get('/api/customer-app/nearby-riders', async (req, res) => {
+  try {
+    const { lat, lng } = req.query;
+    const userLat = parseFloat(lat) || -6.2088;
+    const userLng = parseFloat(lng) || 106.8456;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const [riders] = await pool.query(`
+      SELECT 
+        r.id,
+        r.name,
+        r.code,
+        r.phone,
+        r.is_duty,
+        r.current_lat,
+        r.current_lng,
+        r.last_location_time,
+        r.average_rating,
+        r.total_reviews,
+        c.cart_code,
+        c.name AS cart_name,
+        c.cart_type
+      FROM riders r
+      LEFT JOIN carts c ON r.cart_id = c.id
+      WHERE r.status = 'active'
+    `);
+
+    const calculateDistanceMeters = (lat1, lon1, lat2, lon2) => {
+      if (!lat1 || !lon1 || !lat2 || !lon2) return 999999;
+      const R = 6371e3;
+      const φ1 = lat1 * Math.PI / 180;
+      const φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return Math.round(R * c);
+    };
+
+    const enrichedRiders = await Promise.all(riders.map(async (r) => {
+      const dist = calculateDistanceMeters(userLat, userLng, parseFloat(r.current_lat), parseFloat(r.current_lng));
+      
+      const [stocks] = await pool.query(`
+        SELECT 
+          p.id AS product_id,
+          p.name AS product_name,
+          p.price,
+          p.image,
+          GREATEST(0, COALESCE(rs.allocated_qty, 0) - COALESCE(rs.sold_qty, 0) - COALESCE(rs.reject_qty, 0) - COALESCE(rs.returned_qty, 0)) AS stock_available
+        FROM products p
+        LEFT JOIN rider_stocks rs ON p.id = rs.product_id AND rs.rider_id = ? AND rs.stock_date = ?
+        WHERE p.status = 'active'
+      `, [r.id, todayStr]);
+
+      return {
+        ...r,
+        distance_meters: dist,
+        distance_formatted: dist < 1000 ? `${dist} m` : `${(dist / 1000).toFixed(1)} km`,
+        is_open: r.is_duty === 1,
+        available_products: stocks.filter(p => p.stock_available > 0)
+      };
+    }));
+
+    enrichedRiders.sort((a, b) => {
+      if (a.is_open && !b.is_open) return -1;
+      if (!a.is_open && b.is_open) return 1;
+      return a.distance_meters - b.distance_meters;
+    });
+
+    return sendSuccess(res, enrichedRiders);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 2. Active Vouchers for Customer
+app.get('/api/customer-app/active-vouchers', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT * FROM vouchers 
+      WHERE status = 'active' 
+        AND used_count < quota 
+        AND CURDATE() BETWEEN start_date AND end_date
+      ORDER BY discount_value DESC
+    `);
+    return sendSuccess(res, rows);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 3. Customer Create Order
+app.post('/api/customer-app/orders', async (req, res) => {
+  const conn = await pool.getConnection();
+  try {
+    const {
+      customer_name,
+      customer_phone,
+      rider_id,
+      items = [],
+      voucher_code = '',
+      payment_method = 'qris',
+      notes = '',
+      customer_lat = null,
+      customer_lng = null,
+      pickup_location = ''
+    } = req.body;
+
+    if (!customer_name || !customer_phone) {
+      return sendError(res, 'Nama dan nomor WhatsApp pelanggan wajib diisi!', 400);
+    }
+    if (!items || items.length === 0) {
+      return sendError(res, 'Pilih minimal satu produk kopi!', 400);
+    }
+
+    await conn.beginTransaction();
+
+    let customerId = null;
+    const [custRows] = await conn.query('SELECT id, loyalty_points FROM customers WHERE phone = ?', [customer_phone.trim()]);
+    if (custRows.length > 0) {
+      customerId = custRows[0].id;
+    } else {
+      const [newCust] = await conn.query('INSERT INTO customers (name, phone) VALUES (?, ?)', [customer_name.trim(), customer_phone.trim()]);
+      customerId = newCust.insertId;
+    }
+
+    let subtotal = 0;
+    const processedItems = [];
+    for (const it of items) {
+      const [prodRows] = await conn.query('SELECT id, name, price, cost_price FROM products WHERE id = ?', [it.product_id]);
+      if (prodRows.length === 0) continue;
+      const prod = prodRows[0];
+      const qty = Math.max(1, parseInt(it.qty, 10) || 1);
+      const itemSubtotal = prod.price * qty;
+      subtotal += itemSubtotal;
+      processedItems.push({
+        product_id: prod.id,
+        product_name: prod.name,
+        price: prod.price,
+        cost_price: prod.cost_price,
+        qty,
+        subtotal: itemSubtotal
+      });
+    }
+
+    if (processedItems.length === 0) {
+      await conn.rollback();
+      return sendError(res, 'Produk yang dipilih tidak valid!', 400);
+    }
+
+    let discountAmount = 0;
+    let voucherId = null;
+    if (voucher_code) {
+      const [vRows] = await conn.query(`
+        SELECT * FROM vouchers 
+        WHERE code = ? AND status = 'active' AND used_count < quota AND CURDATE() BETWEEN start_date AND end_date
+        FOR UPDATE
+      `, [voucher_code.toUpperCase().trim()]);
+
+      if (vRows.length > 0) {
+        const v = vRows[0];
+        if (subtotal >= v.min_order_amount) {
+          voucherId = v.id;
+          if (v.discount_type === 'percent') {
+            discountAmount = Math.round((subtotal * v.discount_value) / 100);
+            if (v.max_discount && discountAmount > v.max_discount) {
+              discountAmount = v.max_discount;
+            }
+          } else {
+            discountAmount = Math.min(subtotal, v.discount_value);
+          }
+          await conn.query('UPDATE vouchers SET used_count = used_count + 1 WHERE id = ?', [v.id]);
+        }
+      }
+    }
+
+    const totalAmount = Math.max(0, subtotal - discountAmount);
+    const saleNumber = `ORD-${Date.now().toString().slice(-8)}`;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const [saleRes] = await conn.query(`
+      INSERT INTO sales 
+        (sale_number, rider_id, customer_id, voucher_id, discount_amount, sales_channel, input_source, created_by, sale_date, total_amount, paid_amount, change_amount, payment_method, status, order_status, location_name, customer_lat, customer_lng, notes)
+      VALUES (?, ?, ?, ?, ?, 'rider', 'operator', 1, ?, ?, ?, 0, ?, 'completed', 'pending', ?, ?, ?, ?)
+    `, [
+      saleNumber,
+      rider_id ? Number(rider_id) : null,
+      customerId,
+      voucherId,
+      discountAmount,
+      todayStr,
+      totalAmount,
+      totalAmount,
+      payment_method,
+      pickup_location || 'Customer Online Order',
+      customer_lat ? Number(customer_lat) : null,
+      customer_lng ? Number(customer_lng) : null,
+      notes || `Pesanan Online ${customer_name}`
+    ]);
+
+    const newSaleId = saleRes.insertId;
+
+    for (const item of processedItems) {
+      await conn.query(`
+        INSERT INTO sale_items (sale_id, product_id, product_name, price, cost_price, qty, subtotal)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [newSaleId, item.product_id, item.product_name, item.price, item.cost_price, item.qty, item.subtotal]);
+
+      if (rider_id) {
+        await conn.query(`
+          INSERT INTO rider_stocks (rider_id, product_id, stock_date, sold_qty)
+          VALUES (?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE sold_qty = sold_qty + VALUES(sold_qty)
+        `, [Number(rider_id), item.product_id, todayStr, item.qty]);
+      }
+    }
+
+    const pointsEarned = Math.floor(totalAmount / 10000);
+    await conn.query(`
+      UPDATE customers SET 
+        loyalty_points = loyalty_points + ?,
+        total_spend = total_spend + ?,
+        total_orders = total_orders + 1,
+        last_order_date = ?
+      WHERE id = ?
+    `, [pointsEarned, totalAmount, todayStr, customerId]);
+
+    await conn.commit();
+
+    return sendSuccess(res, {
+      sale_id: newSaleId,
+      sale_number: saleNumber,
+      total_amount: totalAmount,
+      discount_amount: discountAmount,
+      points_earned: pointsEarned,
+      order_status: 'pending'
+    }, null, 'Pesanan berhasil dibuat! Rider terdekat siap meracik pesanan Anda.');
+  } catch (err) {
+    await conn.rollback();
+    return sendError(res, err.message, 500);
+  } finally {
+    conn.release();
+  }
+});
+
+// 4. Order Tracking Status
+app.get('/api/customer-app/orders/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const [rows] = await pool.query(`
+      SELECT 
+        s.*,
+        r.name AS rider_name,
+        r.phone AS rider_phone,
+        r.average_rating AS rider_rating,
+        c.name AS customer_name,
+        c.phone AS customer_phone
+      FROM sales s
+      LEFT JOIN riders r ON s.rider_id = r.id
+      LEFT JOIN customers c ON s.customer_id = c.id
+      WHERE s.id = ?
+    `, [id]);
+
+    if (rows.length === 0) return sendError(res, 'Pesanan tidak ditemukan', 404);
+    const sale = rows[0];
+
+    const [items] = await pool.query('SELECT * FROM sale_items WHERE sale_id = ?', [id]);
+    sale.items = items;
+
+    let step = 1;
+    if (sale.order_status === 'accepted') step = 2;
+    else if (sale.order_status === 'brewing') step = 3;
+    else if (sale.order_status === 'ready' || sale.order_status === 'completed') step = 4;
+
+    sale.tracking_step = step;
+
+    return sendSuccess(res, sale);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 5. Update Order Status
+app.put('/api/customer-app/orders/:id/status', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { order_status } = req.body;
+    const validStatuses = ['pending', 'accepted', 'brewing', 'ready', 'completed', 'cancelled'];
+    if (!validStatuses.includes(order_status)) {
+      return sendError(res, 'Status pesanan tidak valid!', 400);
+    }
+
+    await pool.query('UPDATE sales SET order_status = ? WHERE id = ?', [order_status, id]);
+    return sendSuccess(res, { id, order_status }, null, `Status pesanan diubah ke: ${order_status}`);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 5b. Rider Active Orders & Polling Notification
+app.get('/api/customer-app/rider-orders', async (req, res) => {
+  try {
+    const { rider_id, status } = req.query;
+    if (!rider_id) {
+      return sendError(res, 'rider_id wajib diisi!', 400);
+    }
+
+    let statusFilter = ['pending', 'accepted', 'brewing', 'ready'];
+    if (status) {
+      statusFilter = status.split(',').map(s => s.trim());
+    }
+
+    const [orders] = await pool.query(`
+      SELECT 
+        s.*,
+        c.name AS customer_name,
+        c.phone AS customer_phone,
+        COALESCE((SELECT SUM(qty) FROM sale_items WHERE sale_id = s.id), 0) AS total_items
+      FROM sales s
+      LEFT JOIN customers c ON s.customer_id = c.id
+      WHERE s.rider_id = ? AND s.order_status IN (?)
+      ORDER BY s.id DESC
+      LIMIT 30
+    `, [Number(rider_id), statusFilter]);
+
+    if (orders.length > 0) {
+      const saleIds = orders.map(o => o.id);
+      const [items] = await pool.query('SELECT * FROM sale_items WHERE sale_id IN (?)', [saleIds]);
+      const itemsMap = {};
+      items.forEach(it => {
+        if (!itemsMap[it.sale_id]) itemsMap[it.sale_id] = [];
+        itemsMap[it.sale_id].push(it);
+      });
+      orders.forEach(o => {
+        o.items = itemsMap[o.id] || [];
+      });
+    }
+
+    return sendSuccess(res, orders);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 6. Customer Order History
+app.get('/api/customer-app/orders/history', async (req, res) => {
+  try {
+    const { phone } = req.query;
+    if (!phone) return sendError(res, 'Nomor HP pelanggan wajib diisi', 400);
+
+    const [custRows] = await pool.query('SELECT id, name, loyalty_points, total_spend FROM customers WHERE phone = ?', [phone.trim()]);
+    if (custRows.length === 0) {
+      return sendSuccess(res, { customer: null, orders: [], favorite_products: [] });
+    }
+    const cust = custRows[0];
+
+    const [orders] = await pool.query(`
+      SELECT 
+        s.*,
+        r.name AS rider_name,
+        COALESCE((SELECT SUM(qty) FROM sale_items WHERE sale_id = s.id), 0) AS total_items
+      FROM sales s
+      LEFT JOIN riders r ON s.rider_id = r.id
+      WHERE s.customer_id = ?
+      ORDER BY s.id DESC
+      LIMIT 20
+    `, [cust.id]);
+
+    if (orders.length > 0) {
+      const saleIds = orders.map(o => o.id);
+      const [items] = await pool.query('SELECT * FROM sale_items WHERE sale_id IN (?)', [saleIds]);
+      const itemsMap = {};
+      items.forEach(it => {
+        if (!itemsMap[it.sale_id]) itemsMap[it.sale_id] = [];
+        itemsMap[it.sale_id].push(it);
+      });
+      orders.forEach(o => {
+        o.items = itemsMap[o.id] || [];
+      });
+    }
+
+    const [favProducts] = await pool.query(`
+      SELECT 
+        p.id,
+        p.name,
+        p.price,
+        p.image,
+        SUM(si.qty) AS total_bought
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+      JOIN products p ON si.product_id = p.id
+      WHERE s.customer_id = ? AND s.status = 'completed'
+      GROUP BY p.id, p.name, p.price, p.image
+      ORDER BY total_bought DESC
+      LIMIT 5
+    `, [cust.id]);
+
+    return sendSuccess(res, {
+      customer: cust,
+      orders,
+      favorite_products: favProducts
+    });
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 7. Customer Favorite Riders
+app.get('/api/customer-app/favorites', async (req, res) => {
+  try {
+    const { phone } = req.query;
+    if (!phone) return sendError(res, 'Nomor HP pelanggan wajib diisi', 400);
+
+    const [cust] = await pool.query('SELECT id FROM customers WHERE phone = ?', [phone.trim()]);
+    if (cust.length === 0) return sendSuccess(res, []);
+
+    const [rows] = await pool.query(`
+      SELECT 
+        r.id,
+        r.name,
+        r.code,
+        r.phone,
+        r.average_rating,
+        r.total_reviews,
+        r.is_duty,
+        r.current_lat,
+        r.current_lng
+      FROM customer_favorite_riders cfr
+      JOIN riders r ON cfr.rider_id = r.id
+      WHERE cfr.customer_id = ?
+    `, [cust[0].id]);
+
+    return sendSuccess(res, rows);
+  } catch (err) {
+    return sendError(res, err.message, 500);
+  }
+});
+
+// 8. Toggle Favorite Rider
+app.post('/api/customer-app/favorites/toggle', async (req, res) => {
+  try {
+    const { phone, rider_id } = req.body;
+    if (!phone || !rider_id) return sendError(res, 'Nomor HP dan Rider ID wajib diisi!', 400);
+
+    let customerId = null;
+    const [cust] = await pool.query('SELECT id FROM customers WHERE phone = ?', [phone.trim()]);
+    if (cust.length > 0) {
+      customerId = cust[0].id;
+    } else {
+      const [newCust] = await pool.query('INSERT INTO customers (name, phone) VALUES (?, ?)', ['Pelanggan', phone.trim()]);
+      customerId = newCust.insertId;
+    }
+
+    const [existing] = await pool.query('SELECT id FROM customer_favorite_riders WHERE customer_id = ? AND rider_id = ?', [customerId, Number(rider_id)]);
+    let isFavorite = false;
+    if (existing.length > 0) {
+      await pool.query('DELETE FROM customer_favorite_riders WHERE id = ?', [existing[0].id]);
+      isFavorite = false;
+    } else {
+      await pool.query('INSERT INTO customer_favorite_riders (customer_id, rider_id) VALUES (?, ?)', [customerId, Number(rider_id)]);
+      isFavorite = true;
+    }
+
+    return sendSuccess(res, { is_favorite: isFavorite }, null, isFavorite ? 'Rider berhasil ditambahkan ke favorit ⭐' : 'Rider dihapus dari favorit');
   } catch (err) {
     return sendError(res, err.message, 500);
   }
